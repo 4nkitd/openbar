@@ -58,9 +58,21 @@ struct UsageWindow: Codable {
 
 struct ResetCredits: Codable {
     let availableCount: Int
+    let applicableAvailableCount: Int?
 
     enum CodingKeys: String, CodingKey {
         case availableCount = "available_count"
+        case applicableAvailableCount = "applicable_available_count"
+    }
+}
+
+struct ConsumeResetCreditsResponse: Decodable {
+    let code: String
+    let windowsReset: Int
+
+    enum CodingKeys: String, CodingKey {
+        case code
+        case windowsReset = "windows_reset"
     }
 }
 
@@ -74,6 +86,7 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let settings = SettingsStore.shared
     private let usageURL = URL(string: "https://chatgpt.com/backend-api/codex/usage")!
+    private let resetCreditsConsumeURL = URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume")!
     private lazy var notificationManager = NotificationManager(settings: settings)
     private var settingsWindowController: SettingsWindowController?
     private let popover = NSPopover()
@@ -90,6 +103,7 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
     private var loginLaunched = false
     private var authFingerprintBeforeLogin: String?
     private var isRefreshing = false
+    private var isConsumingReset = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -142,6 +156,7 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
         popover.delegate = self
         popoverController.onRefresh = { [weak self] in self?.refresh() }
         popoverController.onSignIn = { [weak self] in self?.runCodexLogin() }
+        popoverController.onUseResetCredit = { [weak self] in self?.useResetCredit() }
     }
 
     @objc private func statusItemClicked() {
@@ -269,6 +284,28 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func useResetCredit() {
+        guard !isConsumingReset else { return }
+        isConsumingReset = true
+
+        Task {
+            do {
+                let auth = try readAuth()
+                let result = try await consumeResetCredit(auth: auth)
+                await MainActor.run {
+                    self.isConsumingReset = false
+                    self.popoverController.showResetCreditResult(.success(result))
+                    self.refresh()
+                }
+            } catch {
+                await MainActor.run {
+                    self.isConsumingReset = false
+                    self.popoverController.showResetCreditResult(.failure(error))
+                }
+            }
+        }
+    }
+
     private func handleNotLoggedIn() {
         if !loginLaunched {
             authFingerprintBeforeLogin = authFingerprint()
@@ -360,6 +397,36 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
         }
 
         return try JSONDecoder().decode(CodexUsage.self, from: data)
+    }
+
+    private func consumeResetCredit(auth: CodexAuth.Tokens) async throws -> ConsumeResetCreditsResponse {
+        var request = URLRequest(url: resetCreditsConsumeURL)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(auth.accessToken ?? "")", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("codex-cli/0.11.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("codex_cli_rs", forHTTPHeaderField: "originator")
+        if let accountID = auth.accountID, !accountID.isEmpty {
+            request.setValue(accountID, forHTTPHeaderField: "chatgpt-account-id")
+        }
+        request.httpBody = try JSONEncoder().encode(["redeem_request_id": UUID().uuidString])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let http = response as? HTTPURLResponse else {
+            throw CodexError.invalidResponse
+        }
+
+        if http.statusCode == 401 {
+            throw CodexError.notLoggedIn
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            throw CodexError.httpError(http.statusCode)
+        }
+
+        return try JSONDecoder().decode(ConsumeResetCreditsResponse.self, from: data)
     }
 
     // MARK: - Presentation

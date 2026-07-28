@@ -13,6 +13,7 @@ final class UsagePopoverViewController: NSViewController {
     var actionsMenu: NSMenu?
     var onRefresh: (() -> Void)?
     var onSignIn: (() -> Void)?
+    var onUseResetCredit: (() -> Void)?
 
     private let contentWidth: CGFloat = 320
     private let contentInsets = NSEdgeInsets(top: 12, left: 14, bottom: 12, right: 14)
@@ -34,6 +35,10 @@ final class UsagePopoverViewController: NSViewController {
     private let resetInRow = InfoRow(symbol: "timer", title: "Resets in")
     private let resetAtRow = InfoRow(symbol: "calendar.badge.clock", title: "Reset time")
     private let creditsRow = InfoRow(symbol: "arrow.counterclockwise.circle", title: "Reset credits")
+    private let resetCreditRow = NSView()
+    private let resetCreditButton = NSButton()
+    private var resetConfirmPending = false
+    private var resetConfirmTimer: Timer?
 
     // Secondary block
     private let secondaryGroup = RoundedGroupView()
@@ -201,6 +206,8 @@ final class UsagePopoverViewController: NSViewController {
         primaryGroup.addRow(resetAtRow)
         primaryGroup.addDivider(leadingInset: 24)
         primaryGroup.addRow(creditsRow)
+        primaryGroup.addDivider(leadingInset: 24)
+        primaryGroup.addRow(buildResetCreditRow())
 
         secondaryGroup.addRow(secondaryRow)
         secondaryGroup.addDivider(leadingInset: 24)
@@ -238,6 +245,38 @@ final class UsagePopoverViewController: NSViewController {
             usageStack.addArrangedSubview(group)
             group.widthAnchor.constraint(equalTo: usageStack.widthAnchor).isActive = true
         }
+    }
+
+    private func buildResetCreditRow() -> NSView {
+        let icon = Symbols.view("bolt.fill", pointSize: 13, weight: .regular, tint: .secondaryLabelColor)
+        icon.widthAnchor.constraint(equalToConstant: 16).isActive = true
+
+        let titleLabel = NSTextField(labelWithString: "Use reset credit")
+        titleLabel.font = .systemFont(ofSize: 13)
+        titleLabel.setContentHuggingPriority(.required, for: .horizontal)
+
+        resetCreditButton.bezelStyle = .rounded
+        resetCreditButton.controlSize = .small
+        resetCreditButton.title = "Use Reset"
+        resetCreditButton.target = self
+        resetCreditButton.action = #selector(resetCreditClicked)
+        resetCreditButton.setContentHuggingPriority(.required, for: .horizontal)
+
+        let row = NSStackView(views: [icon, titleLabel, flexibleSpacer(), resetCreditButton])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 8
+        row.translatesAutoresizingMaskIntoConstraints = false
+        resetCreditRow.addSubview(row)
+
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: resetCreditRow.leadingAnchor),
+            row.trailingAnchor.constraint(equalTo: resetCreditRow.trailingAnchor),
+            row.topAnchor.constraint(equalTo: resetCreditRow.topAnchor, constant: 5),
+            row.bottomAnchor.constraint(equalTo: resetCreditRow.bottomAnchor, constant: -5)
+        ])
+
+        return resetCreditRow
     }
 
     private func buildStatusArea() {
@@ -347,11 +386,18 @@ final class UsagePopoverViewController: NSViewController {
             resetAtRow.value = "Not started"
         }
 
-        if let credits = usage.rateLimitResetCredits?.availableCount {
-            creditsRow.value = "\(credits)"
+        if let credits = usage.rateLimitResetCredits {
+            creditsRow.value = "\(credits.availableCount)"
             creditsRow.isHidden = false
+            resetCreditRow.isHidden = false
+            resetConfirmTimer?.invalidate()
+            resetConfirmTimer = nil
+            resetConfirmPending = false
+            resetCreditButton.title = "Use Reset"
+            resetCreditButton.isEnabled = (credits.applicableAvailableCount ?? 0) > 0 && primary.usedPercent >= 100
         } else {
             creditsRow.isHidden = true
+            resetCreditRow.isHidden = true
         }
 
         if let secondary = usage.rateLimit.secondaryWindow {
@@ -430,6 +476,53 @@ final class UsagePopoverViewController: NSViewController {
             onRefresh?()
         } else {
             onSignIn?()
+        }
+    }
+
+    @objc private func resetCreditClicked() {
+        if resetConfirmPending {
+            resetConfirmTimer?.invalidate()
+            resetConfirmTimer = nil
+            resetConfirmPending = false
+            resetCreditButton.isEnabled = false
+            resetCreditButton.title = "Resetting…"
+            onUseResetCredit?()
+        } else {
+            resetConfirmPending = true
+            resetCreditButton.title = "Confirm?"
+            resetConfirmTimer?.invalidate()
+            resetConfirmTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { [weak self] _ in
+                guard let self else { return }
+                self.resetConfirmPending = false
+                self.resetCreditButton.title = "Use Reset"
+            }
+        }
+    }
+
+    /// Shows a brief outcome message on the reset-credit button after a
+    /// consume attempt. The delegate follows this with a `refresh()` that
+    /// re-drives `showUsage`, which restores the button to its normal state.
+    func showResetCreditResult(_ result: Result<ConsumeResetCreditsResponse, Error>) {
+        resetConfirmTimer?.invalidate()
+        resetConfirmTimer = nil
+        resetConfirmPending = false
+
+        switch result {
+        case .success(let response):
+            switch response.code {
+            case "reset":
+                resetCreditButton.title = "✓ Reset applied"
+            case "nothing_to_reset":
+                resetCreditButton.title = "Nothing to reset"
+            case "no_credit":
+                resetCreditButton.title = "No credits left"
+            case "already_redeemed":
+                resetCreditButton.title = "Already redeemed"
+            default:
+                resetCreditButton.title = response.code
+            }
+        case .failure:
+            resetCreditButton.title = "Couldn't reset"
         }
     }
 
