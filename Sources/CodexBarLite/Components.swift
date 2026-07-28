@@ -127,15 +127,13 @@ final class ProgressRingView: NSView {
         CATransaction.setDisableActions(true)
         trackLayer.path = CGPath(ellipseIn: rect, transform: nil)
 
+        // Full circle from 12 o'clock, clockwise. `strokeEnd` (not the path
+        // itself) reveals the progress fraction, so it can be tweened with a
+        // CABasicAnimation on `strokeEnd` without re-tracing the path.
         let center = CGPoint(x: rect.midX, y: rect.midY)
         let arcPath = CGMutablePath()
-        if _progress >= 0.9999 {
-            arcPath.addArc(center: center, radius: radius, startAngle: 0, endAngle: 2 * CGFloat.pi, clockwise: false)
-        } else {
-            let start = CGFloat.pi / 2
-            let end = start - 2 * CGFloat.pi * CGFloat(_progress)
-            arcPath.addArc(center: center, radius: radius, startAngle: start, endAngle: end, clockwise: true)
-        }
+        let start = CGFloat.pi / 2
+        arcPath.addArc(center: center, radius: radius, startAngle: start, endAngle: start - 2 * CGFloat.pi, clockwise: true)
         arcLayer.path = arcPath
         arcLayer.strokeEnd = CGFloat(_progress)
         CATransaction.commit()
