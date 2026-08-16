@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/banner.png" alt="CodexBar Lite - your Codex usage, right in your menu bar" width="720">
+  <img src="assets/banner.png" alt="CodexBar Lite usage popover open from a blue 63% status ring in the macOS menu bar" width="720">
 </p>
 
 ## Why CodexBar Lite?
@@ -90,7 +90,7 @@ CodexBar Lite reads:
 
 Future versions install through **CodexBar Lite → Check for Updates…**.
 
-## Preferences
+## Settings
 
 - Refresh every 1, 5, 15, or 30 minutes
 - Launch at Login
@@ -99,7 +99,7 @@ Future versions install through **CodexBar Lite → Check for Updates…**.
 - Notification controls
 
 <p align="center">
-  <img src="assets/screenshots/preferences.png" alt="CodexBar Lite preferences window" width="499">
+  <img src="assets/screenshots/preferences.png" alt="CodexBar Lite tabbed General settings window" width="499">
 </p>
 
 ## Build from source

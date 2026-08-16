@@ -5,7 +5,7 @@ and the generic neon-glow dark-SaaS rut.
 OWN-WORLD: near-black ground (#121212) matched to the icon's fill, Codex Blue
 (#1475fc) committed across buttons/badges/active states, Bricolage Grotesque
 headlines over a native system-font body, pill controls on soft-cornered
-raised cards, a live HTML/CSS recreation of the real menu bar + dropdown
+raised cards, a live HTML/CSS recreation of the real ring icon + usage popover
 as proof (not a screenshot).
 STORY: visitor reads the headline and watches the usage percentage count up
 live in one glance; a "Private by design" checklist affirms every access
@@ -38,7 +38,7 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
   <meta property="og:image" content="https://getcodexbar.xyz/assets/og-card.jpg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="CodexBar Lite - Codex usage dropdown open in the macOS menu bar, showing 63% primary usage and reset times">
+  <meta property="og:image:alt" content="CodexBar Lite usage popover showing a blue 63% usage ring and reset details">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="CodexBar Lite - Minimal Codex Usage Tracker for the macOS Menu Bar">
   <meta name="twitter:description" content="A minimal, lightweight macOS menu bar app for OpenAI Codex usage and rate-limit resets. Free and open source. No Keychain, no cookies, no API key - just your Codex login.">
@@ -203,11 +203,12 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
         </div>
 
         <div class="hero-visual">
-          <div class="demo" id="usage-demo" role="group" aria-label="Live demonstration of the CodexBar Lite menu bar item and usage dropdown, showing 63% primary usage">
+          <div class="demo" id="usage-demo" role="group" aria-label="Live demonstration of the CodexBar Lite blue status ring and 63% menu bar label with the usage popover open">
             <div class="demo-menubar">
               <button type="button" class="demo-menuitem" id="demo-menubar-toggle" aria-expanded="false" aria-controls="demo-dropdown">
-                <span class="dot" aria-hidden="true"></span>
-                Codex <span class="demo-percent" data-target="63">0%</span>
+                <span class="demo-status-ring" id="demo-status-ring" aria-hidden="true"><img class="demo-status-core" src="assets/icon-32.png" alt=""></span>
+                <span class="demo-status-percent" id="demo-status-percent" aria-hidden="true">63%</span>
+                <span class="sr-only" id="demo-status-label">Open CodexBar Lite, 63% used</span>
               </button>
               <span class="demo-sysicons" aria-hidden="true">
                 <svg viewBox="0 0 16 12" width="16" height="12" fill="none"><path d="M8 10.2a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm-3.1-3a4.4 4.4 0 0 1 6.2 0 .6.6 0 0 1-.85.85 3.2 3.2 0 0 0-4.5 0 .6.6 0 0 1-.85-.85Zm-2.15-2.15a7.6 7.6 0 0 1 10.5 0 .6.6 0 1 1-.83.87 6.4 6.4 0 0 0-8.84 0 .6.6 0 0 1-.83-.87Z" fill="currentColor"/></svg>
@@ -220,76 +221,65 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
             </div>
 
             <div class="demo-dropdown" id="demo-dropdown" hidden>
-              <div class="demo-row demo-row-head">
-                <span class="demo-title">Codex Usage</span>
+              <div class="demo-popover-head">
+                <img src="assets/icon-32.png" width="22" height="22" alt="">
+                <span class="demo-title">CodexBar Lite</span>
                 <span class="demo-plus">PLUS</span>
+                <button type="button" class="demo-overflow" id="demo-overflow" aria-expanded="false" aria-controls="demo-actions" aria-label="Open actions menu">&#8230;</button>
               </div>
-
-              <div class="demo-row demo-stat">
-                <span>Primary</span>
-                <span class="demo-primary-value"><span class="demo-percent" data-target="63">0</span>% used</span>
+              <div class="demo-ring-wrap">
+                <div class="demo-usage-ring" id="demo-usage-ring" role="progressbar" aria-label="Primary usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="63">
+                  <div class="demo-ring-inner"><strong id="demo-percent">0%</strong><span id="demo-mode">Used</span></div>
+                </div>
               </div>
-              <div class="demo-track">
-                <div class="demo-fill" id="demo-fill"></div>
+              <div class="demo-native-group">
+                <div class="demo-info-row"><span class="demo-row-icon">&#9716;</span><span>Usage window</span><strong>5-hour</strong></div>
+                <div class="demo-info-row"><span class="demo-row-icon">&#9202;</span><span>Resets in</span><strong id="demo-resets-in">2h 18m</strong></div>
+                <div class="demo-info-row"><span class="demo-row-icon">&#9638;</span><span>Reset time</span><strong id="demo-reset-time">4:33 PM</strong></div>
+                <div class="demo-info-row"><span class="demo-row-icon">&#8634;</span><span>Reset credits</span><strong id="demo-credits">2</strong></div>
+                <div class="demo-info-row demo-reset-row"><span class="demo-row-icon">&#9889;</span><span>Use reset credit</span><button type="button" id="demo-use-reset" disabled>Use Reset</button></div>
               </div>
-
-              <div class="demo-row demo-stat demo-dim">
-                <span>Secondary</span>
-                <span>Unavailable</span>
-              </div>
-
-              <p class="demo-note">Last updated <span id="demo-time">2:15 PM</span></p>
-              <p class="demo-note demo-note-tight">Primary resets in 5d 21h &middot; Reset credits: 2</p>
-
-              <div class="demo-menu">
-                <button type="button" class="demo-menurow" id="demo-refresh">
-                  <span class="demo-refresh-icon" aria-hidden="true">
-                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none"><path d="M13.65 4.35A6 6 0 1 0 14 8h-1.5a4.5 4.5 0 1 1-1.32-3.18L9 7h5V2l-1.65 2.35Z" fill="currentColor"/></svg>
-                  </span>
-                  Refresh
-                  <kbd>&#8984;R</kbd>
-                </button>
-                <button type="button" class="demo-menurow" id="demo-preferences">Preferences&hellip; <kbd>&#8984;,</kbd></button>
-                <button type="button" class="demo-menurow" id="demo-checkupdates">Check for Updates&hellip;</button>
-                <span class="demo-menurow demo-menurow-static demo-quit">Quit CodexBar Lite <kbd>&#8984;Q</kbd></span>
+              <div class="demo-warning" id="demo-warning" hidden>Primary usage is exhausted. A reset credit is available.</div>
+              <div class="demo-footer"><span>Updated <span id="demo-time">2:15 PM</span></span><button type="button" id="demo-refresh" aria-label="Refresh usage">&#8635;</button></div>
+              <div class="demo-actions" id="demo-actions" hidden>
+                <button type="button" id="demo-menu-refresh">Refresh <kbd>&#8984;R</kbd></button>
+                <button type="button" id="demo-preferences">Settings&hellip; <kbd>&#8984;,</kbd></button>
+                <button type="button" id="demo-checkupdates">Check for Updates&hellip;</button>
+                <button type="button" id="demo-quit">Quit CodexBar Lite <kbd>&#8984;Q</kbd></button>
               </div>
             </div>
           </div>
-          <p class="demo-caption">Live demo - click <strong>Codex</strong> in the menu bar to open it.</p>
+          <p class="demo-caption">Live demo - click the <strong>usage ring</strong> in the menu bar to open it.</p>
 
           <div class="win-overlay" id="prefs-window" hidden role="dialog" aria-modal="true" aria-labelledby="prefs-title" tabindex="-1">
-            <div class="win win-prefs">
+            <div class="win win-prefs win-settings">
               <div class="win-titlebar">
                 <button type="button" class="win-dot win-dot-red" data-close aria-label="Close"></button>
                 <span class="win-dot win-dot-yellow"></span>
                 <span class="win-dot win-dot-green"></span>
-                <span class="win-title" id="prefs-title">CodexBar Lite Preferences</span>
+                <span class="win-title" id="prefs-title">General</span>
               </div>
-              <div class="win-body">
-                <p class="win-section">General</p>
-                <div class="win-row"><span>Refresh interval</span><span class="win-select">5 minutes <svg viewBox="0 0 10 6" width="9" height="6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
-                <label class="win-check"><span class="chk chk-on" aria-hidden="true"></span>Launch CodexBar Lite at login</label>
-                <div class="win-row"><span>Menu bar display</span><span class="win-select">Percentage used <svg viewBox="0 0 10 6" width="9" height="6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
-                <label class="win-check"><span class="chk chk-on" aria-hidden="true"></span>Automatically check for updates</label>
-
-                <hr class="win-divider">
-                <p class="win-section">Notifications</p>
-                <div class="win-check-grid">
-                  <label class="win-check"><span class="chk chk-on" aria-hidden="true"></span>80% usage</label>
-                  <label class="win-check"><span class="chk chk-on" aria-hidden="true"></span>90% usage</label>
-                  <label class="win-check"><span class="chk chk-on" aria-hidden="true"></span>Exhausted</label>
-                  <label class="win-check"><span class="chk chk-on" aria-hidden="true"></span>Credits reset</label>
-                </div>
-
-                <hr class="win-divider">
-                <div class="win-about">
-                  <img src="assets/icon-256.png" width="26" height="26" alt="">
-                  <p>CodexBar Lite 0.2.4. No cookies, Keychain, telemetry, or API key.</p>
-                </div>
-                <div class="win-buttons">
-                  <a class="win-btn" href="https://github.com/wei-b0/codexbar-lite" target="_blank" rel="noopener noreferrer">View on GitHub</a>
-                  <button type="button" class="win-btn" id="win-check-updates">Check for Updates&hellip;</button>
-                </div>
+              <div class="settings-toolbar" role="tablist" aria-label="Settings panes">
+                <button type="button" role="tab" aria-selected="true" data-pane="general"><span>&#9881;&#65038;</span>General</button>
+                <button type="button" role="tab" aria-selected="false" data-pane="authentication"><span>&#8984;</span>Authentication</button>
+                <button type="button" role="tab" aria-selected="false" data-pane="notifications"><span>&#9673;</span>Notifications</button>
+                <button type="button" role="tab" aria-selected="false" data-pane="about"><span>&#9432;</span>About</button>
+              </div>
+              <div class="win-body settings-body">
+                <section class="settings-pane" data-settings-pane="general">
+                  <div class="settings-section"><h3><span>&#9673;</span> Startup</h3><div class="settings-group"><div class="settings-row"><span>Launch CodexBar Lite at login</span><span class="settings-switch is-on"></span></div></div><p>CodexBar Lite opens automatically when you log in to your Mac.</p></div>
+                  <div class="settings-section"><h3><span>&#9684;</span> Usage</h3><div class="settings-group"><div class="settings-row"><span>Refresh interval</span><span class="win-select">5 minutes &#8964;</span></div><label class="settings-choice"><span class="settings-radio is-on"></span>Percentage used</label><label class="settings-choice"><span class="settings-radio"></span>Percentage remaining</label></div><p>How often usage is fetched, and what the menu bar and popover show.</p></div>
+                  <div class="settings-section"><h3><span>&#8635;</span> Updates</h3><div class="settings-group"><div class="settings-row"><span>Automatically check for updates</span><span class="settings-switch is-on"></span></div></div><p>New versions are downloaded in the background via Sparkle.</p></div>
+                </section>
+                <section class="settings-pane" data-settings-pane="authentication" hidden>
+                  <div class="settings-section"><h3><span>&#128273;</span> Codex Session</h3><div class="settings-group"><div class="settings-row"><span><span class="settings-ok">&#10003;</span> Signed in</span><strong>Local session</strong></div><div class="settings-row"><span>Session file</span><code>~/.codex/auth.json</code></div><div class="settings-row settings-row-end"><button type="button" class="win-btn">Sign In via Terminal&hellip;</button></div></div><p>CodexBar Lite reads only ~/.codex/auth.json - no Keychain, cookies, or browser access.</p></div>
+                </section>
+                <section class="settings-pane" data-settings-pane="notifications" hidden>
+                  <div class="settings-section"><h3><span>&#128276;</span> Alerts</h3><div class="settings-group"><div class="settings-row"><span>Notify at 80% usage</span><span class="settings-switch is-on"></span></div><div class="settings-row"><span>Notify at 90% usage</span><span class="settings-switch is-on"></span></div><div class="settings-row"><span>Notify when exhausted</span><span class="settings-switch is-on"></span></div><div class="settings-row"><span>Notify when credits reset</span><span class="settings-switch is-on"></span></div></div><p>CodexBar Lite sends a macOS notification when usage crosses a threshold.</p></div>
+                </section>
+                <section class="settings-pane" data-settings-pane="about" hidden>
+                  <div class="settings-section"><h3><span>&#9432;</span> About</h3><div class="settings-group"><div class="settings-about"><img src="assets/icon-256.png" width="48" height="48" alt=""><div><strong>CodexBar Lite</strong><span>Version 0.2.4</span></div></div><div class="settings-row settings-row-actions"><a class="win-btn" href="https://github.com/wei-b0/codexbar-lite" target="_blank" rel="noopener noreferrer">View on GitHub</a><button type="button" class="win-btn" id="win-check-updates">Check for Updates&hellip;</button></div></div><p>Native Codex usage from your existing CLI session. No browser cookies, Keychain access, telemetry, or analytics.</p></div>
+                </section>
               </div>
             </div>
           </div>
@@ -577,20 +567,40 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
       var demo = document.getElementById('usage-demo');
       if (!demo) return;
 
-      var fill = document.getElementById('demo-fill');
-      var percents = demo.querySelectorAll('.demo-percent');
+      var usageRing = document.getElementById('demo-usage-ring');
+      var statusRing = document.getElementById('demo-status-ring');
+      var statusPercent = document.getElementById('demo-status-percent');
+      var statusLabel = document.getElementById('demo-status-label');
+      var percent = document.getElementById('demo-percent');
       var refreshBtn = document.getElementById('demo-refresh');
+      var menuRefreshBtn = document.getElementById('demo-menu-refresh');
       var timeEl = document.getElementById('demo-time');
       var dropdown = document.getElementById('demo-dropdown');
       var menubarToggle = document.getElementById('demo-menubar-toggle');
+      var overflowBtn = document.getElementById('demo-overflow');
+      var actionsMenu = document.getElementById('demo-actions');
+      var resetBtn = document.getElementById('demo-use-reset');
+      var creditsEl = document.getElementById('demo-credits');
+      var warningEl = document.getElementById('demo-warning');
       var playing = false;
       var dropdownOpen = false;
+      var usageValue = 63;
+      var resetConfirmTimer = null;
+
+      function alignPopoverNudge() {
+        var iconRect = statusRing.getBoundingClientRect();
+        var popoverRect = dropdown.getBoundingClientRect();
+        var center = iconRect.left + (iconRect.width / 2) - popoverRect.left;
+        var boundedCenter = Math.max(16, Math.min(popoverRect.width - 16, center));
+        dropdown.style.setProperty('--popover-arrow-x', boundedCenter + 'px');
+      }
 
       function openDropdown() {
         if (dropdownOpen) return;
         dropdownOpen = true;
         dropdown.hidden = false;
         menubarToggle.setAttribute('aria-expanded', 'true');
+        alignPopoverNudge();
         requestAnimationFrame(function () {
           dropdown.classList.add('is-open');
         });
@@ -599,6 +609,7 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
       function closeDropdown() {
         if (!dropdownOpen) return;
         dropdownOpen = false;
+        closeActions();
         dropdown.classList.remove('is-open');
         menubarToggle.setAttribute('aria-expanded', 'false');
         window.setTimeout(function () {
@@ -606,21 +617,37 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
         }, reduceMotion ? 0 : 170);
       }
 
+      window.addEventListener('resize', function () {
+        if (dropdownOpen) alignPopoverNudge();
+      });
+
       function easeOutExpo(t) {
         return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
       }
 
-      function setValue(v) {
-        fill.style.width = v + '%';
-        percents.forEach(function (el) {
-          el.textContent = Math.round(v) + (el.parentElement.classList.contains('demo-menuitem') ? '%' : '');
-        });
+      function ringColor(v) {
+        if (v >= 100) return '#ff453a';
+        if (v >= 90) return '#ff453a';
+        if (v >= 80) return '#ff9f0a';
+        return '#1475fc';
       }
 
-      function play(onDone) {
+      function setValue(v) {
+        var rounded = Math.round(v);
+        var color = ringColor(rounded);
+        usageRing.style.setProperty('--ring-progress', (v * 3.6) + 'deg');
+        usageRing.style.setProperty('--ring-color', color);
+        usageRing.setAttribute('aria-valuenow', rounded);
+        statusRing.style.setProperty('--status-progress', (v * 3.6) + 'deg');
+        statusRing.style.setProperty('--accent', color);
+        statusPercent.textContent = rounded + '%';
+        statusLabel.textContent = 'Open CodexBar Lite, ' + rounded + '% used';
+        percent.textContent = rounded + '%';
+      }
+
+      function play(target, onDone) {
         if (playing) return;
         playing = true;
-        var target = parseInt(percents[0].getAttribute('data-target'), 10);
 
         if (reduceMotion) {
           setValue(target);
@@ -652,7 +679,7 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
       function runIntro() {
         if (reduceMotion) {
           openDropdown();
-          play();
+          play(usageValue);
           return;
         }
         window.setTimeout(function () {
@@ -660,7 +687,7 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
           window.setTimeout(function () {
             menubarToggle.classList.remove('is-pressed');
             openDropdown();
-            play();
+            play(usageValue);
           }, 150);
         }, 1000);
       }
@@ -683,28 +710,70 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
         openDropdown();
         if (!started) {
           started = true;
-          play();
+          play(usageValue);
         } else if (!playing) {
-          setValue(parseInt(percents[0].getAttribute('data-target'), 10));
+          setValue(usageValue);
         }
       });
 
-      if (refreshBtn) {
-        refreshBtn.addEventListener('click', function () {
-          if (playing) return;
-          refreshBtn.classList.add('is-spinning');
-          var now = new Date();
-          var hours = now.getHours() % 12 || 12;
-          var mins = String(now.getMinutes()).padStart(2, '0');
-          var ampm = now.getHours() >= 12 ? 'PM' : 'AM';
-          play(function () {
-            refreshBtn.classList.remove('is-spinning');
-            if (timeEl) timeEl.textContent = hours + ':' + mins + ' ' + ampm;
-          });
+      function closeActions() {
+        if (!actionsMenu || actionsMenu.hidden) return;
+        actionsMenu.hidden = true;
+        overflowBtn.setAttribute('aria-expanded', 'false');
+      }
+
+      function toggleActions() {
+        var opening = actionsMenu.hidden;
+        actionsMenu.hidden = !opening;
+        overflowBtn.setAttribute('aria-expanded', String(opening));
+      }
+
+      function refreshDemo() {
+        if (playing) return;
+        closeActions();
+        refreshBtn.classList.add('is-spinning');
+        usageValue = 100;
+        var now = new Date();
+        var hours = now.getHours() % 12 || 12;
+        var mins = String(now.getMinutes()).padStart(2, '0');
+        var ampm = now.getHours() >= 12 ? 'PM' : 'AM';
+        play(usageValue, function () {
+          refreshBtn.classList.remove('is-spinning');
+          timeEl.textContent = hours + ':' + mins + ' ' + ampm;
+          resetBtn.disabled = false;
+          warningEl.hidden = false;
         });
       }
 
-      // Window overlays: Preferences + Check for Updates
+      overflowBtn.addEventListener('click', toggleActions);
+      refreshBtn.addEventListener('click', refreshDemo);
+      menuRefreshBtn.addEventListener('click', refreshDemo);
+
+      resetBtn.addEventListener('click', function () {
+        if (resetBtn.dataset.confirming === 'true') {
+          window.clearTimeout(resetConfirmTimer);
+          resetBtn.dataset.confirming = 'false';
+          resetBtn.disabled = true;
+          resetBtn.textContent = 'Resetting…';
+          window.setTimeout(function () {
+            usageValue = 0;
+            setValue(0);
+            creditsEl.textContent = '1';
+            warningEl.hidden = true;
+            resetBtn.textContent = '✓ Reset applied';
+            window.setTimeout(function () { resetBtn.textContent = 'Use Reset'; }, reduceMotion ? 0 : 1200);
+          }, reduceMotion ? 0 : 550);
+          return;
+        }
+        resetBtn.dataset.confirming = 'true';
+        resetBtn.textContent = 'Confirm?';
+        resetConfirmTimer = window.setTimeout(function () {
+          resetBtn.dataset.confirming = 'false';
+          resetBtn.textContent = 'Use Reset';
+        }, 3000);
+      });
+
+      // Window overlays: Settings + Check for Updates
       var prefsWindow = document.getElementById('prefs-window');
       var updateWindow = document.getElementById('update-window');
       var updateChecking = document.getElementById('update-checking');
@@ -723,7 +792,6 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
           win.classList.add('is-open');
         });
         win.focus();
-        document.addEventListener('keydown', onKeydown);
       }
 
       function closeWin(win) {
@@ -733,7 +801,6 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
           win.hidden = true;
         }, 180);
         if (currentOpenWin === win) currentOpenWin = null;
-        document.removeEventListener('keydown', onKeydown);
         if (lastFocused && typeof lastFocused.focus === 'function') lastFocused.focus();
       }
 
@@ -741,9 +808,28 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
 
       function onKeydown(e) {
         if (e.key === 'Escape') {
-          closeWin(prefsWindow);
-          closeWin(updateWindow);
-          closeWin(installHelpModal);
+          if (!actionsMenu.hidden) {
+            closeActions();
+            overflowBtn.focus();
+            return;
+          }
+          if (currentOpenWin) {
+            closeWin(currentOpenWin);
+            return;
+          }
+          closeDropdown();
+          menubarToggle.focus();
+          return;
+        }
+        if (e.metaKey && e.key.toLowerCase() === 'r' && dropdownOpen) {
+          e.preventDefault();
+          refreshDemo();
+          return;
+        }
+        if (e.metaKey && e.key === ',' && dropdownOpen) {
+          e.preventDefault();
+          closeActions();
+          openWin(prefsWindow);
           return;
         }
         if (e.key === 'Tab' && currentOpenWin) {
@@ -760,6 +846,11 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
           }
         }
       }
+
+      document.addEventListener('keydown', onKeydown);
+      document.addEventListener('click', function (e) {
+        if (!actionsMenu.hidden && !actionsMenu.contains(e.target) && e.target !== overflowBtn) closeActions();
+      });
 
       [prefsWindow, updateWindow, installHelpModal].forEach(function (win) {
         if (!win) return;
@@ -779,9 +870,29 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
       var prefsBtn = document.getElementById('demo-preferences');
       if (prefsBtn) {
         prefsBtn.addEventListener('click', function () {
+          closeActions();
+          overflowBtn.focus();
           openWin(prefsWindow);
         });
       }
+
+      document.querySelectorAll('[data-pane]').forEach(function (tab) {
+        tab.addEventListener('click', function () {
+          var pane = tab.getAttribute('data-pane');
+          document.querySelectorAll('[data-pane]').forEach(function (item) {
+            item.setAttribute('aria-selected', String(item === tab));
+          });
+          document.querySelectorAll('[data-settings-pane]').forEach(function (panel) {
+            panel.hidden = panel.getAttribute('data-settings-pane') !== pane;
+          });
+          document.getElementById('prefs-title').textContent = tab.textContent.trim();
+        });
+      });
+
+      document.getElementById('demo-quit').addEventListener('click', function () {
+        closeActions();
+        closeDropdown();
+      });
 
       function runUpdateCheck() {
         openWin(updateWindow);
@@ -807,6 +918,8 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
       var checkUpdatesBtn = document.getElementById('demo-checkupdates');
       if (checkUpdatesBtn) {
         checkUpdatesBtn.addEventListener('click', function () {
+          closeActions();
+          overflowBtn.focus();
           closeWin(prefsWindow);
           runUpdateCheck();
         });

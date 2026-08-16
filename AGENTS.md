@@ -18,7 +18,7 @@ Two surfaces in one repo:
 
 ## App notes
 
-- `main.swift` (~530 lines) holds nearly everything: app delegate, auth reading, networking, menus, cache. Small helpers: `Settings.swift` (UserDefaults + SMAppService launch-at-login), `NotificationManager.swift`, `PreferencesWindowController.swift`, `UsageMenuView.swift`, `Branding.swift`.
+- `main.swift` holds the app delegate, auth reading, networking, action menu, and cache. UI is split across `UsagePopoverViewController.swift`, `SettingsWindowController.swift`, and `Components.swift`; supporting helpers include `Settings.swift`, `NotificationManager.swift`, and `Branding.swift`.
 - Usage comes from the unofficial endpoint `https://chatgpt.com/backend-api/codex/usage` while impersonating the Codex CLI (`User-Agent: codex-cli/0.11.0`, `originator: codex_cli_rs`, `chatgpt-account-id` header). It can break when OpenAI changes it. A Cloudflare HTML challenge falls back to the cache at `~/Library/Application Support/CodexBarLite/usage.json`.
 - Sparkle updates and the launch-at-login default are deliberately gated on running from a real `.app` bundle with `SUFeedURL`/`SUPublicEDKey`. Running the bare binary (`swift run`, `.build/...`) skips both — do not remove those guards.
 - Debugging the happy path requires a real Codex CLI session (`codex login` → `~/.codex/auth.json`) and hits the live endpoint. UserDefaults domain: `dev.vaibhav.codexbar`.

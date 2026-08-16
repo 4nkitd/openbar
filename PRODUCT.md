@@ -32,16 +32,16 @@ Usage trackers typically ask for Chrome access, browser cookies, macOS Keychain,
 - Reads only `~/.codex/auth.json`; makes the minimum request needed to show usage directly to `chatgpt.com`.
 - No Chrome/browser-profile access, no cookies, no macOS Keychain, no Accessibility, no Screen Recording, no Full Disk Access, no API key, no third-party backend or account.
 - No telemetry or analytics; stores only preferences and a local usage cache.
-- Preferences: refresh every 1/5/15/30 minutes, Launch at Login, percentage used vs. remaining, automatic update checks, notification controls.
+- Settings: tabbed General, Authentication, Notifications, and About panes; refresh every 1/5/15/30 minutes, Launch at Login, percentage used vs. remaining, automatic update checks, and notification controls.
 - Deliberately excludes dashboards, browser extensions, graphs, themes, and account switching — scope stays "menu bar usage, nothing more."
 - Independent project: not affiliated with, endorsed by, or sponsored by OpenAI.
 
 ## Brand Commitments
 
 - Name: CodexBar Lite. Logo asset: `assets/codexbar-lite-blue-dot.png` (also copied to `docs/assets/logo.png`) — a near-black rounded-square app icon with one solid blue circle (`#1475FC`), the pinned primary brand color.
-- Existing screenshots: `assets/screenshots/hero-menu-bar.png` (menu bar usage), `assets/screenshots/dropdown.png` (usage dropdown), `assets/screenshots/preferences.png` (Preferences window). Also `assets/banner.png`, a marketing render with the tagline "Your Codex usage. Right in your menu bar." — reusable copy.
+- Existing screenshots: `assets/screenshots/hero-menu-bar.png` (blue status ring with a white percentage label), `assets/screenshots/dropdown.png` (card-based usage popover), `assets/screenshots/preferences.png` (tabbed Settings window). Also `assets/banner.png`, a marketing render with the tagline "Your Codex usage. Right in your menu bar." — reusable copy.
 - Voice, as established in the README: direct, unhedged claims about what the app does *not* access; matter-of-fact rather than marketing-heavy.
-- **Standing landing-page direction (pinned 2026-07-23):** dark, near-black ground matching the logo's icon background, with the logo's blue (`#1475FC`) carried at Committed intensity (30-60% of the surface, not a sparing accent). Craft bar is [kraten.github.io/chimlo](https://kraten.github.io/chimlo) — a dark, confident developer-tool launch page (bold display headline, screenshot-mockup hero, feature grid, trust/privacy checklist section, FAQ accordion, closing CTA) — adapted to CodexBar Lite's own content and real screenshots, not copied verbatim. Should read as native macOS chrome where it touches real product UI (menu bar, dropdown).
+- **Standing landing-page direction (pinned 2026-07-23):** dark, near-black ground matching the logo's icon background, with the logo's blue (`#1475FC`) carried at Committed intensity (30-60% of the surface, not a sparing accent). Craft bar is [kraten.github.io/chimlo](https://kraten.github.io/chimlo) — a dark, confident developer-tool launch page (bold display headline, interactive product hero, feature grid, trust/privacy checklist section, FAQ accordion, closing CTA) — adapted to CodexBar Lite's own content and real screenshots, not copied verbatim. Product UI uses the ring-based menu icon, card-based popover, and tabbed Settings window from the app.
 
 ## Evidence on Hand
 

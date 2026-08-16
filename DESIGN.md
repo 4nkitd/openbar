@@ -131,15 +131,15 @@ components:
 
 **Creative North Star: "The Blue Dot, at Committed Scale"**
 
-The landing page is built from the logo outward: a near-black ground identical in character to the icon's own background, with the icon's single blue circle expanded from a 1024×1024 dot into the surface's real structural color — button fills, active states, badges, headline emphasis, checkmarks. The craft bar is a named reference the user pinned, [kraten.github.io/chimlo](https://kraten.github.io/chimlo): a dark, confident developer-tool launch page with a bold display headline, a real-screenshot hero, a feature grid, a trust/privacy section, an FAQ accordion, and a closing CTA. This system executes that structure at full fidelity, populated with CodexBar Lite's own product truth and its own screenshots — never Chimlo's copy, iconography, or exact green accent.
+The landing page is built from the logo outward: a near-black ground identical in character to the icon's own background, with the icon's single blue circle expanded from a 1024×1024 dot into the surface's real structural color — button fills, active states, badges, headline emphasis, checkmarks. The craft bar is a named reference the user pinned, [kraten.github.io/chimlo](https://kraten.github.io/chimlo): a dark, confident developer-tool launch page with a bold display headline, an interactive product hero, a feature grid, a trust/privacy section, an FAQ accordion, and a closing CTA. This system executes that structure at full fidelity, populated with CodexBar Lite's own product truth and its own screenshots — never Chimlo's copy, iconography, or exact green accent.
 
-Where the page touches the product's actual UI (the menu bar strip, the usage dropdown), it stays native: real macOS chrome — vibrancy-style translucent panels, continuous corner radii, SF system type — rather than an illustrated interpretation. Everywhere else, the page allows itself the display headline's confidence and the accent's real structural weight, which is what separates a launch page from a settings pane.
+Where the page touches the product's actual UI (the ring status icon, usage popover, and tabbed Settings window), it stays native: real macOS chrome — vibrancy-style translucent panels, continuous corner radii, SF system type — rather than an illustrated interpretation. Everywhere else, the page allows itself the display headline's confidence and the accent's real structural weight, which is what separates a launch page from a settings pane.
 
 **Key Characteristics:**
 - Near-black ground (`#121212`) matching the logo icon's own background, not a generic dark-SaaS near-black chosen by category.
 - Logo blue (`#1475fc`) at Committed intensity: button fills, badge fills, active/progress states, one emphasized headline word — not restrained to link text.
 - Bold, expressive display face (Bricolage Grotesque) for headlines; native system font (SF Pro / system-ui) for everything meant to read as the OS's own voice.
-- Real product screenshots in a native-chrome frame as the hero and proof, never illustrated mockups.
+- A faithful interactive product recreation in the hero and real product captures everywhere else, never generic dashboard mockups.
 - Rounded, pill-shaped interactive elements (buttons, badges) against otherwise rectilinear panels with soft continuous corners (14-20px) — matching real macOS card language, not the previous world's flat/sharp-cornered document language.
 
 ## Colors
@@ -156,13 +156,13 @@ Near-black ground, one committed blue, sparing warm-white text.
 - **Border** (`#2a2a2d`): 1px hairlines on cards, dividers, input/accordion edges.
 - **Menu Bar Black** (`#060606`): the real menu bar strip's own background inside its frame — darker than the page ground, matching the actual screenshot.
 - **On Accent** (`#ffffff`): text and focus outlines set directly on Codex Blue or on the dark ground.
-- **Hairline Highlight** (`rgba(255,255,255,0.08)`): the 1px inset top edge on the dropdown frame, simulating a vibrancy panel's light catch.
+- **Hairline Highlight** (`rgba(255,255,255,0.08)`): the 1px inset edge on the popover frame, simulating a vibrancy panel's light catch.
 - **Text** (`#f3f3f1`): headlines and primary body copy.
 - **Text Dim** (`#9c9c98`): secondary copy, subheads, captions.
 - **Text Faint** (`#828280`): tertiary meta (footer fine print, timestamps). Lightened from an earlier `#686865` during polish: the original value read at 3.35:1 on the page ground, below WCAG AA's 4.5:1 floor for the small text it's actually used on (install notices, meta lines, footer disclaimer).
 
 ### System Chrome (exempt from the palette)
-- **Traffic Lights** (`#ff5f57` red, `#febc2e` yellow, `#28c840` green): the literal macOS window-control dot colors, used only on the titlebar of the Preferences/Update/Install-help window recreations. These are Apple's own system colors, not part of the product palette, and never appear anywhere else on the page.
+- **Traffic Lights** (`#ff5f57` red, `#febc2e` yellow, `#28c840` green): the literal macOS window-control dot colors, used only on the titlebar of the Settings/Update/Install-help window recreations. These are Apple's own system colors, not part of the product palette, and never appear anywhere else on the page.
 
 ### Named Rules
 **The Committed Blue Rule.** Codex Blue fills real surfaces — buttons, badges, active states — at a scale visible from across the page. It is never reduced to a thin link color; that would undo the "Committed" intensity the user explicitly chose.
@@ -186,7 +186,7 @@ Near-black ground, one committed blue, sparing warm-white text.
 - **UI small tight** (600, 0.9688rem, 1.4): the feature-list row title and the checkbox label text — one hair above UI small, for label weight without jumping a full step.
 - **UI caption** (600, 0.875rem, 1.4): small buttons, the reads-strip line.
 - **Micro** (600, 0.75rem, 1.4, mono, 0.05em tracking, uppercase): badge pill text.
-- **Nano** (600, 0.6875rem, 1.3, mono, 0.04em tracking, uppercase): the "PLUS" tier badge inside the live demo's dropdown — one step below Micro, scaled to the demo's own smaller frame.
+- **Nano** (600, 0.6875rem, 1.3, mono, 0.04em tracking, uppercase): the "PLUS" tier pill inside the live usage popover — one step below Micro, scaled to the demo's own smaller frame.
 - **Glyph** (display face, 1.25rem): the accordion's own +/&minus; indicator only, sized against the summary line it sits beside rather than the body ramp.
 
 ### Named Rules
@@ -209,7 +209,7 @@ Layered, not flat: raised panels (`#1b1b1d`) sit on the ground (`#121212`) with 
 
 ## Shapes
 
-Pill-radius (999px) on every interactive control — buttons, badges, nav pills. Cards and panels use a soft continuous corner (14-20px), never sharp. Inline code and the smallest chips use a tighter 6px radius, matching a real system text-field/token corner rather than the page's card corner. The hand-drawn battery glyph in the live menu bar demo uses 1-2px radii on its own tiny strokes (the icon body and its nub) — scaled to the glyph, not the card system. The Preferences window's checkbox glyph uses a 4px radius, matching a real macOS checkbox corner at that small size. This is a deliberate reversal from the previous flat-document world: the new world speaks real macOS card language.
+Pill-radius (999px) on every interactive control — buttons, badges, nav pills. Cards and panels use a soft continuous corner (14-20px), never sharp. Inline code and the smallest chips use a tighter 6px radius, matching a real system text-field/token corner rather than the page's card corner. The hand-drawn battery glyph in the live menu bar demo uses 1-2px radii on its own tiny strokes (the icon body and its nub) — scaled to the glyph, not the card system. Settings switches and radio controls follow native macOS proportions. This is a deliberate reversal from the previous flat-document world: the new world speaks real macOS card language.
 
 ## Components
 
@@ -231,8 +231,8 @@ Pill-radius (999px) on every interactive control — buttons, badges, nav pills.
 - **Internal Padding:** 24-32px.
 
 ### Live Usage Demo (signature component)
-- The hero no longer uses a static screenshot; it's a real HTML/CSS recreation of the actual menu bar item and dropdown (not an illustration), presented in a raised card with a faint top highlight (1px, 8% white) simulating a vibrancy edge. On scroll into view, the primary-usage percentage and progress bar animate from 0 to their real value (63%) with an authored ease-out; clicking the "Refresh" row replays the animation and updates the timestamp, dramatizing the product's own live-refresh behavior rather than just describing it. Respects `prefers-reduced-motion` (final state renders immediately, no animation). This is the page's one authored motion moment — nothing else on the page animates on its own.
-- The Features-section "difference card" and the Preferences screenshot still use real product screenshots (`docs/assets/screenshots/`); only the hero's menu bar + dropdown became a live recreation.
+- The hero is a real HTML/CSS recreation of the blue ring-and-percentage menu bar item and card-based usage popover. The primary ring animates to 63%; refreshing advances the mock data to exhaustion, enables the reset-credit action, and allows the native two-click confirmation flow. The overflow menu opens Settings and update-check actions. All motion resolves immediately under `prefers-reduced-motion`.
+- The Settings overlay recreates the current General, Authentication, Notifications, and About toolbar panes. Canonical captures in `docs/assets/screenshots/` use the same structure and controlled sample values as the live demo.
 
 ### Checklist (privacy section)
 - Each row: a filled Codex Blue circular checkmark (16px), body-weight text, no strike-through — this world proves the no-access claim by affirmation ("No Chrome access") rather than the previous world's strike-through negation.
