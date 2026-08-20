@@ -71,14 +71,21 @@
     <section class="section">
       <div class="wrap guide-wrap">
         <p class="eyebrow">Guide</p>
-        <h1 class="headline">A lightweight CodexBar alternative.</h1>
-        <p class="section-sub">CodexBar Lite does one thing CodexBar does - show your Codex usage in the macOS menu bar - and deliberately nothing else. Here's an honest comparison so you can pick the right tool.</p>
+        <h1 class="headline">CodexBar alternatives, compared.</h1>
+        <p class="section-sub">CodexBar Lite is one of several macOS menu bar apps for tracking Codex usage. Here's how it stacks up against CodexBar, CodexUsageBar, SessionWatcher, and TokenBar - access required, providers supported, and price, sourced from each tool's own site.</p>
 
         <h2>What CodexBar does well</h2>
-        <p><a href="https://github.com/steipete/codexbar" target="_blank" rel="noopener noreferrer">CodexBar</a> is an excellent open-source menu bar app that tracks usage across many AI coding tools - Codex, Claude, Cursor, Gemini, Copilot, and more. If you juggle several providers and want every quota in one dropdown, it's the right choice, and this page won't pretend otherwise.</p>
+        <p><a href="https://github.com/steipete/codexbar" target="_blank" rel="noopener noreferrer">CodexBar</a> is an excellent open-source menu bar app that tracks usage across 66+ AI coding providers - Codex, Claude, Cursor, Gemini, Copilot, and many more - with session, weekly, and monthly windows. If you juggle several providers and want every quota in one dropdown, it's the right choice, and this page won't pretend otherwise.</p>
 
         <h2>The cost of tracking everything</h2>
-        <p>Supporting every provider means collecting sessions from wherever each provider keeps them. Per its own documentation, CodexBar can read browser cookies (Safari, Chrome, Chromium, Brave, Edge), use macOS Keychain access to decrypt them, request Full Disk Access for Safari data, store provider API keys in its config file, and optionally inspect the running-process list to detect agent activity. All of that is documented, legitimate, and mostly optional - but it's a lot of surface area if the only number you care about is Codex.</p>
+        <p>Supporting 66+ providers means collecting sessions from wherever each one keeps them. Per its own documentation, CodexBar requires macOS 14 (Sonoma) or later, uses macOS Keychain access to decrypt browser cookies and store OAuth credentials, and can request Full Disk Access for Safari data. All of that is documented, legitimate, and mostly optional depending on which providers you enable - but it's a lot of surface area if the only number you care about is Codex. It's free and open source under the MIT license.</p>
+
+        <h2>CodexUsageBar: the closest privacy match</h2>
+        <p><a href="https://github.com/Artzainnn/CodexUsageBar" target="_blank" rel="noopener noreferrer">CodexUsageBar</a> is the one alternative here that makes essentially the same access claim CodexBar Lite does: no cookies, no API key, reading the Codex CLI session directly. It's also free and open source. Where it differs is hardware and OS support - it runs on macOS 12+ on both Apple Silicon and Intel, wider than CodexBar Lite's Apple Silicon-only, macOS 13+ requirement - and its notification thresholds are set at 25/50/75/90% rather than CodexBar Lite's 80/90/exhaustion/reset. If you're on an Intel Mac or an older macOS release, CodexUsageBar is worth trying; if you want Sparkle-based in-app auto-updates and are on Apple Silicon, that's where CodexBar Lite differs.</p>
+
+        <h2>SessionWatcher and TokenBar: paid, multi-provider, access undisclosed</h2>
+        <p><a href="https://sessionwatcher.com/" target="_blank" rel="noopener noreferrer">SessionWatcher</a> tracks Claude, Codex, and Cursor (bundle tier) starting at $6.99 one-time, running on macOS 14+ on Apple Silicon and Intel. <a href="https://www.tokenbar.site/" target="_blank" rel="noopener noreferrer">TokenBar</a> tracks OpenAI, Codex, Claude, and Cursor for $5/month or $15 lifetime. Neither publishes what system access it needs to read usage from each provider - no stated position on cookies, Keychain, or API keys, and no GitHub repository to check yourself. That's not an accusation of anything; it's simply information CodexBar Lite and CodexUsageBar do publish and these two don't, which matters if the app's whole pitch is "just show me a number."</p>
+        <p>Two other tools are worth a mention even though they're not really competing for the same search: <a href="https://codexti.me/" target="_blank" rel="noopener noreferrer">Codextime</a> takes a CLI-sync-plus-public-leaderboard approach rather than a menu bar display, and <a href="https://usagebar.com/" target="_blank" rel="noopener noreferrer">Usagebar</a> is built Claude-Code-first with Codex as a secondary feature.</p>
 
         <h2>What CodexBar Lite does instead</h2>
         <p>CodexBar Lite is single-provider by design. It reads one file - <code>~/.codex/auth.json</code>, the session your existing <code>codex login</code> already created - and makes the minimum request to <code>chatgpt.com</code> needed to show your usage. That architecture means there is nothing to grant:</p>
@@ -93,23 +100,25 @@
         <p>Read how <a href="/codex-usage-without-api-key">CodexBar Lite tracks usage without an API key</a> or any of those additional permissions.</p>
 
         <h2>Side by side</h2>
+        <div class="table-scroll">
         <table class="guide-table">
           <thead>
-            <tr><th></th><th>CodexBar</th><th>CodexBar Lite</th></tr>
+            <tr><th></th><th>CodexBar Lite</th><th>CodexBar</th><th>CodexUsageBar</th><th>SessionWatcher</th><th>TokenBar</th></tr>
           </thead>
           <tbody>
-            <tr><td>Providers</td><td>Codex, Claude, Cursor, Gemini, Copilot, more</td><td>Codex only</td></tr>
-            <tr><td>Browser cookie access</td><td>Yes, for web-based providers</td><td>Never</td></tr>
-            <tr><td>macOS Keychain</td><td>Yes, to decrypt Chromium cookies</td><td>Never</td></tr>
-            <tr><td>Full Disk Access</td><td>Optional, for Safari data</td><td>Never</td></tr>
-            <tr><td>API keys</td><td>Optional, stored in config</td><td>None</td></tr>
-            <tr><td>Reads</td><td>Cookies, config files, local logs</td><td>One file: <code>~/.codex/auth.json</code></td></tr>
-            <tr><td>Price &amp; license</td><td>Free, open source</td><td>Free, open source</td></tr>
+            <tr><td>Providers</td><td>Codex only</td><td>66+, incl. Claude, Cursor, Gemini, Copilot</td><td>Codex only</td><td>Claude, Codex, Cursor</td><td>OpenAI, Codex, Claude, Cursor</td></tr>
+            <tr><td>Browser cookie access</td><td>Never</td><td>Yes, for web-based providers</td><td>Never</td><td>Not publicly documented</td><td>Not publicly documented</td></tr>
+            <tr><td>macOS Keychain</td><td>Never</td><td>Yes, for cookies &amp; OAuth</td><td>Never</td><td>Not publicly documented</td><td>Not publicly documented</td></tr>
+            <tr><td>API keys</td><td>None</td><td>Optional, stored in config</td><td>None</td><td>Not publicly documented</td><td>Not publicly documented</td></tr>
+            <tr><td>Open source</td><td>Yes</td><td>Yes (MIT)</td><td>Yes</td><td>Not stated</td><td>Not stated</td></tr>
+            <tr><td>macOS / chip support</td><td>13+, Apple Silicon only</td><td>14+ (Sonoma)</td><td>12+, Apple Silicon &amp; Intel</td><td>14+ (Sonoma), Apple Silicon &amp; Intel</td><td>Not stated</td></tr>
+            <tr><td>Price</td><td>Free</td><td>Free</td><td>Free</td><td>From $6.99 one-time</td><td>$5/mo or $15 lifetime</td></tr>
           </tbody>
         </table>
+        </div>
 
         <h2>Which should you pick?</h2>
-        <p>Track multiple AI tools and want one dropdown for all of them? Use CodexBar. Only care about Codex and want the smallest possible footprint - one number, zero extra permissions? That's exactly what CodexBar Lite is for.</p>
+        <p>Track multiple AI tools and want one dropdown for all of them? Use CodexBar. On an Intel Mac or an older macOS release and only need Codex? Try CodexUsageBar. Fine paying for a bundled multi-tool app and don't need to verify its access model yourself? SessionWatcher or TokenBar might fit. Want the smallest possible footprint on Apple Silicon - one number, zero extra permissions, open source you can read yourself? That's exactly what CodexBar Lite is for.</p>
 
         <div class="guide-cta">
           <p>Native, minimal, and private by architecture. Your Codex login is enough.</p>
@@ -119,7 +128,7 @@
           </div>
         </div>
 
-        <p class="meta-line" style="margin-top: 2rem;">CodexBar capability details reflect its public README at the time of writing. CodexBar Lite is not affiliated with CodexBar or OpenAI.</p>
+        <p class="meta-line" style="margin-top: 2rem;">Details about other tools reflect their public sites/READMEs as of August 2026 and may change - check each tool's current docs before deciding. CodexBar Lite is not affiliated with any tool named on this page or with OpenAI.</p>
       </div>
     </section>
   </main>

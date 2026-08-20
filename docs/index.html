@@ -111,13 +111,29 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
     </div>
   </header>
 
-  <a class="ph-strip" href="https://www.producthunt.com/products/codexbar-lite?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-codexbar-lite" target="_blank" rel="noopener noreferrer" data-umami-event="producthunt-click">
-    <span class="wrap ph-strip-inner">
+  <section class="announce" aria-label="Product announcement">
+    <div class="wrap announce-inner">
       <span class="badge">Featured</span>
-      <span class="ph-strip-text"><span class="ph-strip-text-long">CodexBar Lite is featured on Product Hunt &mdash; see the launch and join the conversation.</span><span class="ph-strip-text-short">Featured on Product Hunt &rarr;</span></span>
-      <img alt="CodexBar Lite on Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1205642&amp;theme=dark&amp;t=1784914986208">
-    </span>
-  </a>
+      <p class="announce-text"><span class="announce-text-long">CodexBar Lite is featured on Product Hunt &mdash; see the launch and join the conversation.</span><span class="announce-text-short">Featured on Product Hunt &rarr;</span></p>
+      <div class="announce-ctas">
+        <button type="button" class="btn btn-ghost btn-small announce-waitlist-btn" id="waitlist-toggle" aria-expanded="false" aria-controls="waitlist-panel" data-umami-event="waitlist-toggle">Join Waitlist</button>
+        <a class="announce-ph-link" href="https://www.producthunt.com/products/codexbar-lite?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-codexbar-lite" target="_blank" rel="noopener noreferrer" data-umami-event="producthunt-click" aria-label="CodexBar Lite on Product Hunt">
+          <img alt="CodexBar Lite on Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1205642&amp;theme=dark&amp;t=1784914986208">
+        </a>
+      </div>
+    </div>
+
+    <div class="waitlist-panel" id="waitlist-panel" hidden>
+      <form class="wrap waitlist-panel-inner" id="waitlist-form">
+        <label class="waitlist-panel-label" for="waitlist-email">Get notified when the next update ships</label>
+        <div class="waitlist-panel-field">
+          <input type="email" name="email" id="waitlist-email" class="waitlist-input" placeholder="you@example.com" required autocomplete="email">
+          <button type="submit" class="btn btn-primary btn-small">Notify me</button>
+        </div>
+        <p class="waitlist-panel-status" id="waitlist-status" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </section>
 
   <main id="top">
 
@@ -804,6 +820,73 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
           openWin(installHelpModal);
         });
       });
+
+      var WAITLIST_FORM_ENDPOINT = 'https://app.loops.so/api/newsletter-form/cms8zdr6809ak0i2oravm9du3';
+      var WAITLIST_RATE_LIMIT_MS = 60000;
+      var waitlistToggle = document.getElementById('waitlist-toggle');
+      var waitlistPanel = document.getElementById('waitlist-panel');
+      var waitlistForm = document.getElementById('waitlist-form');
+      var waitlistStatus = document.getElementById('waitlist-status');
+      var waitlistEmail = document.getElementById('waitlist-email');
+
+      if (waitlistToggle && waitlistPanel) {
+        waitlistToggle.addEventListener('click', function () {
+          var willOpen = waitlistPanel.hidden;
+          waitlistPanel.hidden = !willOpen;
+          waitlistToggle.setAttribute('aria-expanded', String(willOpen));
+          if (willOpen && waitlistEmail) waitlistEmail.focus();
+        });
+      }
+
+      if (waitlistForm) {
+        waitlistForm.addEventListener('submit', function (e) {
+          e.preventDefault();
+          var email = waitlistEmail ? waitlistEmail.value.trim() : '';
+          if (!email) return;
+
+          var lastSubmit = Number(localStorage.getItem('loops-form-timestamp') || 0);
+          if (lastSubmit && Date.now() - lastSubmit < WAITLIST_RATE_LIMIT_MS) {
+            waitlistStatus.textContent = 'Too many signups — please try again in a minute.';
+            waitlistStatus.className = 'waitlist-panel-status is-error';
+            return;
+          }
+
+          var submitBtn = waitlistForm.querySelector('button[type="submit"]');
+          if (submitBtn) submitBtn.disabled = true;
+          waitlistStatus.textContent = 'Joining…';
+          waitlistStatus.className = 'waitlist-panel-status';
+
+          fetch(WAITLIST_FORM_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'userGroup=Waitlist&email=' + encodeURIComponent(email)
+          })
+            .then(function (res) {
+              var ok = res.ok;
+              return res.json().catch(function () { return {}; }).then(function (data) {
+                return { ok: ok, data: data };
+              });
+            })
+            .then(function (result) {
+              if (result.ok) {
+                localStorage.setItem('loops-form-timestamp', String(Date.now()));
+                waitlistStatus.textContent = 'You’re on the list — thanks!';
+                waitlistStatus.className = 'waitlist-panel-status is-success';
+                waitlistForm.reset();
+              } else {
+                waitlistStatus.textContent = (result.data && result.data.message) || 'Something went wrong. Please try again.';
+                waitlistStatus.className = 'waitlist-panel-status is-error';
+              }
+            })
+            .catch(function () {
+              waitlistStatus.textContent = 'Something went wrong. Please try again.';
+              waitlistStatus.className = 'waitlist-panel-status is-error';
+            })
+            .finally(function () {
+              if (submitBtn) submitBtn.disabled = false;
+            });
+        });
+      }
 
       var prefsBtn = document.getElementById('demo-preferences');
       if (prefsBtn) {
