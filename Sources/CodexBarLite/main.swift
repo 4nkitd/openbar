@@ -58,36 +58,61 @@ struct UsageWindow: Codable {
 
 struct ResetCredits: Codable {
     let availableCount: Int
+    let applicableAvailableCount: Int?
 
     enum CodingKeys: String, CodingKey {
         case availableCount = "available_count"
+        case applicableAvailableCount = "applicable_available_count"
+    }
+}
+
+struct ConsumeResetCreditsResponse: Decodable {
+    let code: String
+    let windowsReset: Int
+
+    enum CodingKeys: String, CodingKey {
+        case code
+        case windowsReset = "windows_reset"
     }
 }
 
 final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
+    private enum PresentationState {
+        case usage
+        case signedOut(signingIn: Bool)
+        case failure(String)
+    }
+
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let settings = SettingsStore.shared
     private let usageURL = URL(string: "https://chatgpt.com/backend-api/codex/usage")!
+    private let resetCreditsConsumeURL = URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume")!
     private lazy var notificationManager = NotificationManager(settings: settings)
-    private lazy var preferencesController = PreferencesWindowController(settings: settings) { [weak self] in
-        self?.checkForUpdates()
-    }
+    private var settingsWindowController: SettingsWindowController?
+    private let popover = NSPopover()
+    private let popoverController = UsagePopoverViewController()
+    private var actionsMenu: NSMenu?
     private var updaterController: SPUStandardUpdaterController?
     private var refreshTimer: Timer?
     private var loginPollTimer: Timer?
     private var lastUsage: CodexUsage?
     private var lastUpdatedAt: Date?
     private var lastWarning: String?
+    private var presentationState: PresentationState?
+    private var popoverKeyMonitor: Any?
     private var loginLaunched = false
     private var authFingerprintBeforeLogin: String?
     private var isRefreshing = false
+    private var isConsumingReset = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         if let logoImage = AppBranding.logoImage {
             NSApp.applicationIconImage = logoImage
         }
-        statusItem.button?.title = "Codex ◔ …"
+        configureStatusItem()
+        renderStatusItem()
+        configurePopover()
 
         settings.applyLaunchAtLoginDefaultIfNeeded()
         configureUpdater()
@@ -114,6 +139,91 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
+
+    // MARK: - Status item & popover
+
+    private func configureStatusItem() {
+        guard let button = statusItem.button else { return }
+        button.action = #selector(statusItemClicked)
+        button.target = self
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+    }
+
+    private func configurePopover() {
+        popover.contentViewController = popoverController
+        popover.behavior = .transient
+        popover.animates = true
+        popover.delegate = self
+        popoverController.onRefresh = { [weak self] in self?.refresh() }
+        popoverController.onSignIn = { [weak self] in self?.runCodexLogin() }
+        popoverController.onUseResetCredit = { [weak self] in self?.useResetCredit() }
+    }
+
+    @objc private func statusItemClicked() {
+        guard let button = statusItem.button, let event = NSApp.currentEvent else { return }
+
+        if event.type == .rightMouseUp {
+            guard let menu = actionsMenu else { return }
+            statusItem.menu = menu
+            button.performClick(nil)
+            statusItem.menu = nil
+            return
+        }
+
+        if popover.isShown {
+            popover.performClose(nil)
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+    }
+
+    private func installPopoverKeyMonitor() {
+        guard popoverKeyMonitor == nil else { return }
+        popoverKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.modifierFlags.contains(.command) else { return event }
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "r":
+                self.refresh()
+                return nil
+            case ",":
+                self.showSettings()
+                return nil
+            case "q":
+                self.quit()
+                return nil
+            default:
+                return event
+            }
+        }
+    }
+
+    private func removePopoverKeyMonitor() {
+        if let monitor = popoverKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            popoverKeyMonitor = nil
+        }
+    }
+
+    private func refreshDisplayedState() {
+        switch presentationState {
+        case .usage:
+            if let usage = lastUsage, let updatedAt = lastUpdatedAt {
+                popoverController.update(
+                    state: .usage(usage, updatedAt: updatedAt, warning: lastWarning),
+                    displayMode: settings.displayMode
+                )
+            }
+        case .signedOut(let signingIn):
+            popoverController.update(state: .signedOut(signingIn: signingIn), displayMode: settings.displayMode)
+        case .failure(let message):
+            popoverController.update(state: .failure(message), displayMode: settings.displayMode)
+        case nil:
+            break
+        }
+    }
+
+    // MARK: - Setup
 
     private func configureUpdater() {
         guard Bundle.main.bundleURL.pathExtension == "app",
@@ -174,6 +284,28 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func useResetCredit() {
+        guard !isConsumingReset else { return }
+        isConsumingReset = true
+
+        Task {
+            do {
+                let auth = try readAuth()
+                let result = try await consumeResetCredit(auth: auth)
+                await MainActor.run {
+                    self.isConsumingReset = false
+                    self.popoverController.showResetCreditResult(.success(result))
+                    self.refresh()
+                }
+            } catch {
+                await MainActor.run {
+                    self.isConsumingReset = false
+                    self.popoverController.showResetCreditResult(.failure(error))
+                }
+            }
+        }
+    }
+
     private func handleNotLoggedIn() {
         if !loginLaunched {
             authFingerprintBeforeLogin = authFingerprint()
@@ -213,6 +345,14 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
         }
 
         return tokens
+    }
+
+    private func currentAuthStatus() -> AuthStatus {
+        guard let tokens = try? readAuth(),
+              let accessToken = tokens.accessToken, !accessToken.isEmpty else {
+            return AuthStatus(signedIn: false, accountID: nil)
+        }
+        return AuthStatus(signedIn: true, accountID: tokens.accountID)
     }
 
     private func authFingerprint() -> String? {
@@ -259,111 +399,71 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
         return try JSONDecoder().decode(CodexUsage.self, from: data)
     }
 
+    private func consumeResetCredit(auth: CodexAuth.Tokens) async throws -> ConsumeResetCreditsResponse {
+        var request = URLRequest(url: resetCreditsConsumeURL)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(auth.accessToken ?? "")", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("codex-cli/0.11.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("codex_cli_rs", forHTTPHeaderField: "originator")
+        if let accountID = auth.accountID, !accountID.isEmpty {
+            request.setValue(accountID, forHTTPHeaderField: "chatgpt-account-id")
+        }
+        request.httpBody = try JSONEncoder().encode(["redeem_request_id": UUID().uuidString])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let http = response as? HTTPURLResponse else {
+            throw CodexError.invalidResponse
+        }
+
+        if http.statusCode == 401 {
+            throw CodexError.notLoggedIn
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            throw CodexError.httpError(http.statusCode)
+        }
+
+        return try JSONDecoder().decode(ConsumeResetCreditsResponse.self, from: data)
+    }
+
+    // MARK: - Presentation
+
     private func renderUsage(_ usage: CodexUsage, updatedAt: Date, warning: String?) {
         lastUsage = usage
         lastUpdatedAt = updatedAt
         lastWarning = warning
-        updateStatusTitle(for: usage)
-
-        let menu = NSMenu()
-        let usageItem = NSMenuItem()
-        let usageView = UsageMenuView()
-        usageView.update(usage: usage, displayMode: settings.displayMode, updatedAt: updatedAt)
-        usageItem.view = usageView
-        menu.addItem(usageItem)
-
-        let primary = usage.rateLimit.primaryWindow
-        let primaryReset = NSMenuItem(
-            title: "Primary resets in \(formatDuration(secondsUntilReset(primary)))",
-            action: nil,
-            keyEquivalent: ""
+        presentationState = .usage
+        renderStatusItem()
+        rebuildActionsMenu(showLogin: false)
+        popoverController.update(
+            state: .usage(usage, updatedAt: updatedAt, warning: warning),
+            displayMode: settings.displayMode
         )
-        primaryReset.isEnabled = false
-        menu.addItem(primaryReset)
-
-        if let secondary = usage.rateLimit.secondaryWindow {
-            let secondaryReset = NSMenuItem(
-                title: "Secondary resets in \(formatDuration(secondsUntilReset(secondary)))",
-                action: nil,
-                keyEquivalent: ""
-            )
-            secondaryReset.isEnabled = false
-            menu.addItem(secondaryReset)
-        }
-
-        if let credits = usage.rateLimitResetCredits?.availableCount {
-            let creditsItem = NSMenuItem(title: "Reset credits: \(credits)", action: nil, keyEquivalent: "")
-            creditsItem.isEnabled = false
-            menu.addItem(creditsItem)
-        }
-
-        if let warning {
-            menu.addItem(NSMenuItem.separator())
-            let warningItem = NSMenuItem(title: "⚠ \(warning)", action: nil, keyEquivalent: "")
-            warningItem.isEnabled = false
-            menu.addItem(warningItem)
-        }
-
-        menu.addItem(NSMenuItem.separator())
-        addCommonActions(to: menu, showLogin: false)
-        statusItem.menu = menu
+        settingsWindowController?.reloadAuth()
     }
 
     private func renderLoginMenu(signingIn: Bool) {
-        statusItem.button?.title = signingIn ? "Codex ◔ Sign In…" : "Codex ◔ Sign In"
         lastUsage = nil
         lastUpdatedAt = nil
-
-        let menu = NSMenu()
-        let title = NSMenuItem(title: "Codex Usage", action: nil, keyEquivalent: "")
-        title.attributedTitle = NSAttributedString(
-            string: "Codex Usage",
-            attributes: [.font: NSFont.boldSystemFont(ofSize: 14)]
-        )
-        title.isEnabled = false
-        menu.addItem(title)
-
-        let status = NSMenuItem(
-            title: signingIn ? "Signing in to Codex…" : "Codex login required",
-            action: nil,
-            keyEquivalent: ""
-        )
-        status.isEnabled = false
-        menu.addItem(status)
-
-        if signingIn {
-            let terminal = NSMenuItem(title: "Finish login in Terminal. Status updates automatically.", action: nil, keyEquivalent: "")
-            terminal.isEnabled = false
-            menu.addItem(terminal)
-        }
-
-        menu.addItem(NSMenuItem.separator())
-        addCommonActions(to: menu, showLogin: true)
-        statusItem.menu = menu
+        presentationState = .signedOut(signingIn: signingIn)
+        renderStatusItem()
+        rebuildActionsMenu(showLogin: true)
+        popoverController.update(state: .signedOut(signingIn: signingIn), displayMode: settings.displayMode)
     }
 
     private func renderErrorMenu(_ error: Error) {
-        statusItem.button?.title = "Codex ◔ Error"
-
-        let menu = NSMenu()
-        let title = NSMenuItem(title: "CodexBar Lite", action: nil, keyEquivalent: "")
-        title.attributedTitle = NSAttributedString(
-            string: "CodexBar Lite",
-            attributes: [.font: NSFont.boldSystemFont(ofSize: 14)]
-        )
-        title.isEnabled = false
-        menu.addItem(title)
-
-        let message = NSMenuItem(title: error.localizedDescription, action: nil, keyEquivalent: "")
-        message.isEnabled = false
-        menu.addItem(message)
-
-        menu.addItem(NSMenuItem.separator())
-        addCommonActions(to: menu, showLogin: false)
-        statusItem.menu = menu
+        presentationState = .failure(error.localizedDescription)
+        renderStatusItem()
+        rebuildActionsMenu(showLogin: false)
+        popoverController.update(state: .failure(error.localizedDescription), displayMode: settings.displayMode)
     }
 
-    private func addCommonActions(to menu: NSMenu, showLogin: Bool) {
+    private func rebuildActionsMenu(showLogin: Bool) {
+        let menu = NSMenu()
+
         let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refreshMenuAction), keyEquivalent: "r")
         refreshItem.target = self
         menu.addItem(refreshItem)
@@ -376,9 +476,9 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        let preferencesItem = NSMenuItem(title: "Preferences…", action: #selector(showPreferences), keyEquivalent: ",")
-        preferencesItem.target = self
-        menu.addItem(preferencesItem)
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         let updateItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdatesMenuAction), keyEquivalent: "")
         updateItem.target = self
@@ -390,19 +490,62 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
         let quitItem = NSMenuItem(title: "Quit CodexBar Lite", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
+
+        actionsMenu = menu
+        popoverController.actionsMenu = menu
     }
 
-    private func updateStatusTitle(for usage: CodexUsage) {
-        let primary = displayedPercent(usage.rateLimit.primaryWindow)
-        statusItem.button?.title = "Codex ◔ \(primary)%"
-        if lastWarning != nil {
-            statusItem.button?.title += " ⚠"
+    private func renderStatusItem() {
+        guard let button = statusItem.button else { return }
+
+        let logo = AppBranding.logoImage
+
+        switch presentationState {
+        case .usage:
+            guard let usage = lastUsage else {
+                button.image = StatusIconRenderer.render(.empty, logo: logo)
+                return
+            }
+            let used = usage.rateLimit.primaryWindow.usedPercent
+            let shown = settings.displayMode == .used ? used : 100 - used
+            let progress = Double(max(0, min(100, shown))) / 100
+            let color = AppBranding.progressColor(forUsedPercent: used)
+            button.image = StatusIconRenderer.render(.usage(progress: progress, color: color), logo: logo)
+            button.attributedTitle = statusItemTitle("\(shown)%", warningSuffix: lastWarning != nil)
+        case .signedOut:
+            button.image = StatusIconRenderer.render(.empty, logo: logo)
+            button.attributedTitle = statusItemTitle("—%", warningSuffix: false)
+        case .failure:
+            button.image = StatusIconRenderer.render(.empty, logo: logo)
+            button.attributedTitle = statusItemTitle("—%", warningSuffix: false)
+        case nil:
+            button.image = StatusIconRenderer.render(.empty, logo: logo)
+            button.attributedTitle = statusItemTitle("—%", warningSuffix: false)
         }
+    }
+
+    private func statusItemTitle(_ text: String, warningSuffix: Bool) -> NSAttributedString {
+        let suffixText = warningSuffix ? " ⚠" : ""
+        let baseFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        let attr = NSMutableAttributedString(string: text + suffixText, attributes: [
+            .font: baseFont,
+            .foregroundColor: NSColor.labelColor
+        ])
+        if warningSuffix {
+            let ns = attr.string as NSString
+            let range = ns.range(of: suffixText)
+            if range.location != NSNotFound {
+                attr.addAttribute(.foregroundColor, value: NSColor.systemYellow, range: range)
+            }
+        }
+        return attr
     }
 
     private func displayedPercent(_ window: UsageWindow) -> Int {
         settings.displayMode == .used ? window.usedPercent : 100 - window.usedPercent
     }
+
+    // MARK: - Actions
 
     @objc private func refreshMenuAction() {
         refresh()
@@ -435,8 +578,20 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func showPreferences() {
-        preferencesController.show()
+    @objc private func showSettings() {
+        popover.performClose(nil)
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController(
+                settings: settings,
+                onCheckForUpdates: { [weak self] in self?.checkForUpdates() },
+                onSignIn: { [weak self] in self?.runCodexLogin() },
+                authStatusProvider: { [weak self] in
+                    self?.currentAuthStatus() ?? AuthStatus(signedIn: false, accountID: nil)
+                },
+                canCheckForUpdates: { [weak self] in self?.updaterController != nil }
+            )
+        }
+        settingsWindowController?.show()
     }
 
     @objc private func checkForUpdatesMenuAction() {
@@ -458,27 +613,11 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
             updater.automaticallyChecksForUpdates = settings.checkForUpdates
         }
         notificationManager.requestAuthorizationIfNeeded()
-
-        if let usage = lastUsage, let updatedAt = lastUpdatedAt {
-            renderUsage(usage, updatedAt: updatedAt, warning: lastWarning)
-        }
+        refreshDisplayedState()
+        renderStatusItem()
     }
 
-    private func formatDuration(_ seconds: Int) -> String {
-        if seconds <= 0 { return "0m" }
-
-        let days = seconds / 86_400
-        let hours = (seconds % 86_400) / 3_600
-        let minutes = (seconds % 3_600) / 60
-
-        if days > 0 { return "\(days)d \(hours)h" }
-        if hours > 0 { return "\(hours)h \(minutes)m" }
-        return "\(minutes)m"
-    }
-
-    private func secondsUntilReset(_ window: UsageWindow) -> Int {
-        max(0, window.resetAt - Int(Date().timeIntervalSince1970))
-    }
+    // MARK: - Cache
 
     private func cacheURL() -> URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -502,6 +641,20 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         let updatedAt = attributes[.modificationDate] as? Date ?? Date()
         return (usage, updatedAt)
+    }
+}
+
+extension CodexBarLiteApp: NSPopoverDelegate {
+    func popoverWillShow(_ notification: Notification) {
+        refreshDisplayedState()
+    }
+
+    func popoverDidShow(_ notification: Notification) {
+        installPopoverKeyMonitor()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        removePopoverKeyMonitor()
     }
 }
 
