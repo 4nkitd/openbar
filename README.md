@@ -83,7 +83,7 @@ CodexBar Lite reads:
 
 ## Install
 
-1. [Download the latest release](https://github.com/wei-b0/codexbar-lite/releases/download/v0.2.4/CodexBarLite-0.2.4-arm64.dmg).
+1. [Download the latest release](https://github.com/wei-b0/codexbar-lite/releases/download/v0.2.5/CodexBarLite-0.2.5-arm64.dmg).
 2. Open the downloaded `.dmg`.
 3. Drag CodexBar Lite into `/Applications`.
 4. Open it.

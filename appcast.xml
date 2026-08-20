@@ -3,13 +3,13 @@
     <channel>
         <title>CodexBarLite</title>
         <item>
-            <title>0.2.4</title>
-            <pubDate>Thu, 23 Jul 2026 15:28:38 +0530</pubDate>
-            <sparkle:version>7</sparkle:version>
-            <sparkle:shortVersionString>0.2.4</sparkle:shortVersionString>
+            <title>0.2.5</title>
+            <pubDate>Thu, 20 Aug 2026 14:02:04 +0530</pubDate>
+            <sparkle:version>8</sparkle:version>
+            <sparkle:shortVersionString>0.2.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/wei-b0/codexbar-lite/releases/download/v0.2.4/CodexBarLite-macos-v0.2.4.zip" length="2916682" type="application/octet-stream" sparkle:edSignature="34a7GxCXOlzsqb6m5a6MLGcgCCPO9LHHpDrrLcdp20jAcNH5CbEiSnVU2wQ2fW32GVmhD61sWUAMJ56w4pkEBA=="/>
+            <enclosure url="https://github.com/wei-b0/codexbar-lite/releases/download/v0.2.5/CodexBarLite-macos-v0.2.5.zip" length="2966774" type="application/octet-stream" sparkle:edSignature="CQdJEeja7SKIQ2kNTuV1IIgLg5RLIFSkHk0E3J5Dzqx+xcOQjJJJFZj+ShWjqJsCfkbHuE13wyzY5DS36IqiCw=="/>
         </item>
     </channel>
 </rss>
