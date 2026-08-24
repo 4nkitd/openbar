@@ -23,6 +23,10 @@
 </p>
 
 <p align="center">
+  <a href="https://www.producthunt.com/products/codexbar-lite/launches/codexbar-lite?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-codexbar-lite" target="_blank" rel="noopener noreferrer"><img alt="CodexBar Lite - Privacy-first Codex tracker for your macOS menu bar | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1205642&amp;theme=light&amp;t=1787548580050"></a>
+</p>
+
+<p align="center">
   <img src="assets/banner.png" alt="CodexBar Lite usage popover open from a blue 63% status ring in the macOS menu bar" width="720">
 </p>
 
