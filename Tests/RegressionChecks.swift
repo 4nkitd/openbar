@@ -1,0 +1,205 @@
+import AppKit
+import Foundation
+
+private struct CheckFailure: Error, CustomStringConvertible {
+    let description: String
+}
+
+private final class CheckAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+}
+
+private func check(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+    if !condition() { throw CheckFailure(description: message) }
+}
+
+private func json(_ value: String) -> Data { Data(value.utf8) }
+
+private func sample(_ id: IntegrationID, account: String? = nil, used: Double = 27) -> ProviderUsage {
+    ProviderUsage(
+        id: id.rawValue + (account ?? ""), integration: id, name: id.name,
+        accountLabel: account, plan: "Pro", sourceLabel: "First-party quota API",
+        limits: [
+            ProviderLimit(cadence: .session, label: nil, usedPercent: used, resetAt: Date().addingTimeInterval(7200)),
+            ProviderLimit(cadence: .weekly, label: nil, usedPercent: 81, resetAt: Date().addingTimeInterval(172800))
+        ], resetCredits: nil
+    )
+}
+
+private actor FetchProbe {
+    var calls: [IntegrationID: Int] = [:]
+    var gates: [IntegrationID: CheckedContinuation<[ProviderUsage], Error>] = [:]
+
+    func fetch(_ id: IntegrationID) async throws -> [ProviderUsage] {
+        calls[id, default: 0] += 1
+        return try await withCheckedThrowingContinuation { gates[id] = $0 }
+    }
+
+    func complete(_ id: IntegrationID, _ result: Result<[ProviderUsage], Error>) {
+        gates.removeValue(forKey: id)?.resume(with: result)
+    }
+}
+
+@main
+private struct RegressionChecks {
+    @MainActor static func main() async throws {
+        let output = URL(fileURLWithPath: CommandLine.arguments[1])
+        let service = IntegrationService()
+        let codex = try await service.parseCodex(json(#"{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":27,"limit_window_seconds":18000,"reset_at":1788780000},"secondary_window":{"used_percent":81,"limit_window_seconds":604800,"reset_at":1789200000}},"additional_rate_limits":[{"limit_name":"spark","rate_limit":{"primary_window":{"used_percent":2,"limit_window_seconds":18000},"secondary_window":{"used_percent":8,"limit_window_seconds":604800}}}]}"#))
+        try check(codex.limits.count == 4, "All Codex windows must be parsed")
+        try check(codex.limitingWindow.usedPercent == 81, "Weekly exhaustion must not hide behind a healthy session")
+        try check(codex.limits[2].displayLabel != codex.limits[3].displayLabel, "Custom windows need cadence labels")
+        let claude = try await service.parseClaude(json(#"{"five_hour":{"utilization":15,"resets_at":"2026-10-01T01:00:00Z"},"seven_day":{"utilization":40,"resets_at":null},"seven_day_sonnet":null}"#))
+        try check(claude.limits.map(\.usedPercent) == [15, 40], "Claude utilization is already a percentage")
+        try check(claude.limits[1].resetAt == nil, "Missing reset must remain unknown")
+        let go = try await service.parseOpenCodeGo(json(#"{"windows":{"rolling":{"usage_percent":65,"resets_in_seconds":7200},"weekly":{"usage_percent":30,"resets_in_seconds":432000},"monthly":{"usage_percent":12,"resets_in_seconds":1209600}}}"#))
+        try check(go.limits.map(\.remainingPercent) == [35, 70, 88], "Go remaining quota must not be inverted")
+        let alternate = try await service.parseOpenCodeGo(json(#"{"usage":{"rolling":{"percent":"25","resetsAt":"2026-10-01T00:00:00.000Z"}}}"#))
+        try check(alternate.primary.usedPercent == 25 && alternate.primary.resetAt != nil, "Alternate Go schema")
+        let copilot = try await service.parseGitHubCopilot(json(#"{"copilot_plan":"individual_pro","quota_reset_date":"2026-10-01","quota_snapshots":{"chat":{"entitlement":-1,"remaining":-1},"premium_interactions":{"entitlement":1500,"remaining":-300}}}"#))
+        try check(copilot.primary.remainingPercent == 0, "Overage must show exhausted, not negative remaining")
+        try check(copilot.primary.resetAt != nil, "Copilot date-only reset")
+        let load: [String: Any] = ["currentTier": ["name": "Pro"]]
+        let summary: [String: Any] = ["groups": [["displayName": "Gemini Models", "buckets": [
+            ["window": "5h", "remainingFraction": 0.92], ["window": "weekly", "remainingFraction": 0.78]
+        ]]]]
+        let google = try await service.parseAntigravitySummary(load: load, summary: summary)
+        try check(google.limits.map(\.remainingPercent) == [92, 78], "Antigravity summary fractions")
+        let fallback: [String: Any] = ["models": ["gemini-3-flash": ["quotaInfo": ["remainingFraction": 0.41]]]]
+        let quota = try await service.parseAntigravityQuota(load: load, quota: fallback)
+        try check(quota.primary.displayLabel == "Gemini 3 Flash", "Structural wrappers must not replace model labels")
+        do {
+            _ = try await service.parseOpenCodeGo(json(#"{"usage":{"rolling":{"percent":"NaN"}}}"#))
+            throw CheckFailure(description: "Nonfinite usage accepted")
+        } catch is IntegrationError {}
+        let original = json(#"{"auth_mode":"chatgpt","unknown":{"keep":true},"tokens":{"access_token":"old","refresh_token":"r","account_id":"account","custom":"preserve"}}"#)
+        let auth = CodexAuth(tokens: .init(accessToken: "new", refreshToken: "r2", idToken: nil, accountID: "account"), lastRefresh: "now")
+        let merged = try JSONSerialization.jsonObject(with: CredentialStore.updatedCodexAuth(original, auth: auth)) as! [String: Any]
+        try check(merged["auth_mode"] as? String == "chatgpt" && merged["unknown"] != nil, "Do not strip unknown Codex metadata")
+        try check((merged["tokens"] as? [String: Any])?["custom"] as? String == "preserve", "Preserve unknown token fields")
+        var switched = auth
+        switched.tokens?.accountID = "another-account"
+        do {
+            _ = try CredentialStore.updatedCodexAuth(original, auth: switched)
+            throw CheckFailure(description: "Concurrent account switch was overwritten")
+        } catch is IntegrationError {}
+        let retryResponse = HTTPURLResponse(url: URL(string: "https://api.github.com/copilot_internal/user")!, statusCode: 429, httpVersion: nil, headerFields: ["Retry-After": "900"])!
+        do {
+            try await service.validate(retryResponse, data: Data(), provider: "Copilot")
+            throw CheckFailure(description: "Rate limit was accepted")
+        } catch IntegrationError.rateLimited(let deadline) {
+            try check(deadline.timeIntervalSinceNow > 895, "Parse Retry-After header")
+        }
+        print("PASS response parsers, malformed data, auth metadata preservation")
+
+        let probe = FetchProbe()
+        let cache = QuotaCache(url: output.appendingPathComponent("test-cache.json"))
+        let store = QuotaStore(cache: cache) { try await probe.fetch($0) }
+        var fresh = 0
+        store.onFresh = { _ in fresh += 1 }
+        store.setEnabled([.codex, .claude])
+        store.refresh()
+        try await wait { await probe.calls.count == 2 }
+        await probe.complete(.codex, .success([codex]))
+        try await wait { store.states[.codex]?.isRefreshing == false }
+        try check(store.states[.claude]?.isRefreshing == true, "Fast provider must render before slow provider")
+        try check(fresh == 1, "Fresh notification only")
+        store.refresh()
+        let codexCalls = await probe.calls[.codex]
+        try check(codexCalls == 1, "Manual refresh must obey cooldown")
+        store.setEnabled([.codex])
+        await probe.complete(.claude, .success([claude]))
+        try await Task.sleep(nanoseconds: 20_000_000)
+        try check(store.states[.claude]?.providers.isEmpty == true, "Disabled provider's late response must be ignored")
+        store.refresh(now: Date().addingTimeInterval(61))
+        try await wait { await probe.calls[.codex] == 2 }
+        let retryDate = Date().addingTimeInterval(1200)
+        await probe.complete(.codex, .failure(IntegrationError.rateLimited(retryDate)))
+        try await wait { store.states[.codex]?.isRefreshing == false }
+        try check(store.states[.codex]?.updatedAt != nil && fresh == 1, "Network failure retains timestamp, never notifies from cache")
+        try check(store.states[.codex]!.retryAt! >= retryDate, "Respect server Retry-After")
+        store.credentialsChanged(.codex)
+        try await wait { await probe.calls[.codex] == 3 }
+        try check(store.states[.codex]?.providers.isEmpty == true, "Credential changes invalidate old account cache")
+        await probe.complete(.codex, .success([codex]))
+        try await wait { store.states[.codex]?.isRefreshing == false }
+        let saved = await cache.load()
+        try check(saved.allSatisfy { !$0.providers.isEmpty }, "Cache contains complete quota entries")
+        print("PASS progressive refresh, cancellation, cooldown, backoff, credential invalidation")
+
+        let app = NSApplication.shared
+        let appDelegate = CheckAppDelegate()
+        app.delegate = appDelegate
+        app.setActivationPolicy(.accessory)
+        let controller = UsagePopoverViewController()
+        let enabled = IntegrationID.allCases
+        let providers = [codex, claude, go, copilot, google]
+        var states = Dictionary(uniqueKeysWithValues: zip(enabled, providers).map { ($0, IntegrationState(providers: [$1], updatedAt: Date())) })
+        states[.antigravity]?.providers = [sample(.antigravity, account: "personal@example.test", used: 8), sample(.antigravity, account: "work@example.test", used: 12)]
+        let start = ProcessInfo.processInfo.systemUptime
+        controller.update(states: states, enabled: enabled, displayMode: .remaining)
+        let firstRender = (ProcessInfo.processInfo.systemUptime - start) * 1000
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: controller.preferredContentSize), styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentViewController = controller
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.setContentSize(controller.preferredContentSize)
+        window.orderFront(nil)
+        window.contentView?.layoutSubtreeIfNeeded()
+        try snapshot(controller.view, to: output.appendingPathComponent("popover-dark.png"))
+        let before = Set(descendants(controller.view).map(ObjectIdentifier.init))
+        var timings: [Double] = []
+        for _ in 0..<100 {
+            let start = ProcessInfo.processInfo.systemUptime
+            controller.update(states: states, enabled: enabled, displayMode: .remaining)
+            timings.append((ProcessInfo.processInfo.systemUptime - start) * 1000)
+        }
+        let after = Set(descendants(controller.view).map(ObjectIdentifier.init))
+        try check(before == after, "Repeated updates must reuse view identities")
+        let toggles = descendants(controller.view).compactMap { $0 as? NSButton }.filter { $0.accessibilityLabel()?.hasPrefix("Show ") == true }
+        for toggle in toggles { toggle.performClick(nil) }
+        window.setContentSize(controller.preferredContentSize)
+        window.contentView?.layoutSubtreeIfNeeded()
+        let scroll = descendants(controller.view).compactMap { $0 as? NSScrollView }.first!
+        try check(scroll.documentView!.frame.height > scroll.contentSize.height, "Expanded providers must scroll, not clip")
+        try snapshot(controller.view, to: output.appendingPathComponent("popover-expanded.png"))
+        for toggle in toggles { toggle.performClick(nil) }
+        window.appearance = NSAppearance(named: .aqua)
+        window.setContentSize(controller.preferredContentSize)
+        try snapshot(controller.view, to: output.appendingPathComponent("popover-light.png"))
+        states[.claude]?.message = "Access denied. Sign in again."
+        states[.claude]?.updatedAt = Date().addingTimeInterval(-3600)
+        controller.update(states: states, enabled: enabled, displayMode: .used)
+        window.setContentSize(controller.preferredContentSize)
+        try snapshot(controller.view, to: output.appendingPathComponent("popover-error.png"))
+        controller.update(states: [:], enabled: [], displayMode: .used)
+        window.setContentSize(controller.preferredContentSize)
+        try snapshot(controller.view, to: output.appendingPathComponent("popover-empty.png"))
+        let preferences = SettingsWindowController(settings: .shared, onCheckForUpdates: {}, onSignIn: {}, onCredentialsChanged: { _ in }, canCheckForUpdates: { false })
+        preferences.updateStatuses(states)
+        preferences.show()
+        preferences.window?.appearance = NSAppearance(named: .darkAqua)
+        try snapshot(preferences.window!.contentView!, to: output.appendingPathComponent("settings-dark.png"))
+        preferences.window?.orderOut(nil)
+        print(String(format: "PASS native UI identity reuse + expansion/scroll + empty/error/light/dark; first render %.2fms, update p50 %.2fms, p95 %.2fms", firstRender, timings.sorted()[50], timings.sorted()[95]))
+        window.orderOut(nil)
+        withExtendedLifetime(appDelegate) {}
+        print("ALL CHECKS PASSED")
+    }
+
+    @MainActor private static func wait(_ predicate: () async -> Bool) async throws {
+        for _ in 0..<1000 {
+            if await predicate() { return }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        throw CheckFailure(description: "Timed out waiting for asynchronous check")
+    }
+
+    @MainActor private static func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+
+    @MainActor private static func snapshot(_ view: NSView, to url: URL) throws {
+        view.layoutSubtreeIfNeeded()
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw CheckFailure(description: "No bitmap") }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        try bitmap.representation(using: .png, properties: [:])!.write(to: url)
+    }
+}
