@@ -54,6 +54,8 @@ All quota collection uses in-process HTTP requests to the issuing provider. Ther
 - Existing preferences and `CodexBarLite/quotas-v2.json` readings are copied on first launch without deleting the original data. Launch-at-login registration is tied to the new app bundle; check the switch after installing OpenBar.
 - Codex token refresh updates only the selected account's auth file and preserves unrelated JSON fields. Claude refresh caches are scoped to their configured account and source sign-in.
 
+Background Keychain reads do not show authorization dialogs or wait for permission. If an older sign-in is protected by another app's access controls, use that account's existing credential file or explicitly allow OpenBar in Keychain Access. A readable account can continue refreshing while another sign-in is inaccessible.
+
 Manual refreshes observe a minimum interval of one minute per account, or five minutes for Claude. Failures back off up to 30 minutes, and a longer server `Retry-After` is respected. Opening the popover or changing display preferences does not trigger requests.
 
 ## Build and run
