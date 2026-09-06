@@ -2,6 +2,7 @@ import Foundation
 import Security
 import CryptoKit
 import LocalAuthentication
+import Darwin
 
 // Modified Swift adaptation of Headroom's HTTP adapters; see THIRD_PARTY_NOTICES.md.
 
@@ -142,6 +143,15 @@ enum CredentialStore {
     // Retain the legacy service so existing saved tokens survive the app rename.
     private static let service = "dev.vaibhav.codexbar.integrations"
     static let googleOAuthService = "in.4nkitd.openbar.oauth"
+    // LAContext does not suppress legacy Keychain ACL prompts on current macOS.
+    // Use the still-exported legacy policy without linking to its deprecated SDK declaration.
+    private static let backgroundKeychainAccess: Bool = {
+        guard let handle = dlopen(nil, RTLD_LAZY) else { return false }
+        defer { dlclose(handle) }
+        guard let symbol = dlsym(handle, "SecKeychainSetUserInteractionAllowed") else { return false }
+        let setInteraction = unsafeBitCast(symbol, to: (@convention(c) (UInt8) -> Int32).self)
+        return setInteraction(0) == errSecSuccess
+    }()
 
     static func configuredToken(for account: IntegrationAccount) -> String? {
         readKeychain(service: service, account: account.tokenKey)
@@ -364,6 +374,7 @@ enum CredentialStore {
     }
 
     private static func readKeychain(service: String, account: String) -> String? {
+        guard backgroundKeychainAccess else { return nil }
         let context = LAContext()
         context.interactionNotAllowed = true
         let query: [String: Any] = [
@@ -825,11 +836,15 @@ actor IntegrationService {
         if !forceRefresh, let cached = googleTokenCache[account.refreshToken], cached.expiresAt.timeIntervalSinceNow > 60 { return cached.token }
         if !forceRefresh, let token = account.accessToken, !token.isEmpty { return token }
         let environment = ProcessInfo.processInfo.environment
-        let clients: [(String, String)] = ["ANTIGRAVITY", "GEMINI"].compactMap { prefix in
+        let savedClients = CredentialStore.googleOAuthClients().map { ($0.clientID, $0.clientSecret) }
+        if ProcessInfo.processInfo.arguments.contains("--diagnostics") {
+            FileHandle.standardError.write(Data("Google OAuth: \(savedClients.count) local client configuration(s) available.\n".utf8))
+        }
+        let clients: [(String, String)] = savedClients + ["ANTIGRAVITY", "GEMINI"].compactMap { prefix in
             guard let id = environment["\(prefix)_OAUTH_CLIENT_ID"], !id.isEmpty,
                   let secret = environment["\(prefix)_OAUTH_CLIENT_SECRET"], !secret.isEmpty else { return nil }
             return (id, secret)
-        } + CredentialStore.googleOAuthClients().map { ($0.clientID, $0.clientSecret) }
+        }
         guard !clients.isEmpty else {
             throw IntegrationError.notConfigured("OAuth setup required. Open Integrations → Antigravity → Configure OAuth.")
         }
