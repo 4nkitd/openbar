@@ -5,7 +5,7 @@ OUT="${CHECK_OUTPUT_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/codexbar-check.XXXXXX")}"
 mkdir -p "$OUT/Checks.app/Contents/MacOS" "$OUT/Checks.app/Contents/Resources"
 printf '%s\n' '<?xml version="1.0"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleExecutable</key><string>Checks</string><key>CFBundleIdentifier</key><string>dev.codexbar.regression-checks</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>' > "$OUT/Checks.app/Contents/Info.plist"
 FILES=()
-for file in "$ROOT"/Sources/CodexBarLite/*.swift; do
+for file in "$ROOT"/Sources/OpenBar/*.swift; do
     [[ "$file" == */App.swift ]] || FILES+=("$file")
 done
 swiftc -parse-as-library -warnings-as-errors "${FILES[@]}" "$ROOT/Tests/RegressionChecks.swift" -o "$OUT/Checks.app/Contents/MacOS/Checks"

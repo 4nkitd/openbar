@@ -22,7 +22,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle")
             ],
-            path: "Sources/CodexBarLite"
+            path: "Sources/OpenBar"
         )
     ]
 )
