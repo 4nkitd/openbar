@@ -1,6 +1,7 @@
 import Foundation
 import Security
 import CryptoKit
+import LocalAuthentication
 
 // Modified Swift adaptation of Headroom's HTTP adapters; see THIRD_PARTY_NOTICES.md.
 
@@ -363,10 +364,13 @@ enum CredentialStore {
     }
 
     private static func readKeychain(service: String, account: String) -> String? {
+        let context = LAContext()
+        context.interactionNotAllowed = true
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+            kSecUseAuthenticationContext as String: context,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
