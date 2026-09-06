@@ -11,10 +11,33 @@ enum AppBranding {
     /// The single pinned brand accent (#1475FC), taken from the logo's blue dot.
     static let accentColor = NSColor(srgbRed: 0x14 / 255, green: 0x75 / 255, blue: 0xFC / 255, alpha: 1)
 
+    static func providerImage(for integration: IntegrationID) -> NSImage? {
+        let resource: (String, String)
+        switch integration {
+        case .codex: resource = ("ProviderCodex", "pdf")
+        case .claude: resource = ("ProviderClaude", "svg")
+        case .openCodeGo: resource = ("ProviderOpenCode", "svg")
+        case .githubCopilot: resource = ("ProviderCopilot", "pdf")
+        case .antigravity: resource = ("ProviderAntigravity", "png")
+        }
+        guard let url = Bundle.main.url(forResource: resource.0, withExtension: resource.1) else { return nil }
+        let image = NSImage(contentsOf: url)
+        if integration == .codex || integration == .githubCopilot { image?.isTemplate = true }
+        return image
+    }
+
     /// Semantic progress color: accent at calm usage, orange/red as limits approach.
     static func progressColor(forUsedPercent percent: Int) -> NSColor {
-        if percent >= 90 { return .systemRed }
-        if percent >= 80 { return .systemOrange }
+        if percent >= 90 { return criticalColor }
+        if percent >= 80 { return warningColor }
         return accentColor
+    }
+
+    private static let warningColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .systemOrange : NSColor(srgbRed: 0.65, green: 0.29, blue: 0, alpha: 1)
+    }
+
+    private static let criticalColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .systemRed : NSColor(srgbRed: 0.75, green: 0.08, blue: 0.10, alpha: 1)
     }
 }

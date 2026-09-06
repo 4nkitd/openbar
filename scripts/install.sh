@@ -28,6 +28,13 @@ cp "$BUILD_DIR/$APP_NAME" "$MACOS_DIR/$APP_NAME"
 ditto "$BUILD_DIR/Sparkle.framework" "$FRAMEWORKS_DIR/Sparkle.framework"
 cp "$ROOT_DIR/assets/CodexBarLite.icns" "$RESOURCES_DIR/CodexBarLite.icns"
 cp "$ROOT_DIR/assets/codexbar-lite-blue-dot.png" "$RESOURCES_DIR/CodexBarLiteLogo.png"
+cp "$ROOT_DIR/assets/providers/claude.svg" "$RESOURCES_DIR/ProviderClaude.svg"
+cp "$ROOT_DIR/assets/providers/opencode.svg" "$RESOURCES_DIR/ProviderOpenCode.svg"
+cp "$ROOT_DIR/assets/providers/codex.pdf" "$RESOURCES_DIR/ProviderCodex.pdf"
+cp "$ROOT_DIR/assets/providers/antigravity.png" "$RESOURCES_DIR/ProviderAntigravity.png"
+cp "$ROOT_DIR/assets/providers/copilot.pdf" "$RESOURCES_DIR/ProviderCopilot.pdf"
+cp "$ROOT_DIR/THIRD_PARTY_NOTICES.md" "$RESOURCES_DIR/THIRD_PARTY_NOTICES.md"
+cp -R "$ROOT_DIR/licenses" "$RESOURCES_DIR/licenses"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/$APP_NAME" 2>/dev/null || true
 
 cat > "$PLIST" <<EOF

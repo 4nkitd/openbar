@@ -23,6 +23,10 @@ final class SettingsStore {
         static let notifyWhenReset = "notifyWhenReset"
         static let launchAtLogin = "launchAtLogin"
         static let didSetLaunchAtLoginDefault = "didSetLaunchAtLoginDefault"
+
+        static func integration(_ id: IntegrationID) -> String {
+            "integration.\(id.rawValue).enabled"
+        }
     }
 
     private let defaults = UserDefaults.standard
@@ -36,7 +40,12 @@ final class SettingsStore {
             Key.notifyAt90: true,
             Key.notifyWhenExhausted: true,
             Key.notifyWhenReset: true,
-            Key.launchAtLogin: true
+            Key.launchAtLogin: true,
+            Key.integration(.codex): true,
+            Key.integration(.claude): false,
+            Key.integration(.openCodeGo): false,
+            Key.integration(.githubCopilot): false,
+            Key.integration(.antigravity): false
         ])
     }
 
@@ -82,6 +91,18 @@ final class SettingsStore {
 
     var notificationsEnabled: Bool {
         notifyAt80 || notifyAt90 || notifyWhenExhausted || notifyWhenReset
+    }
+
+    var enabledIntegrations: [IntegrationID] {
+        IntegrationID.allCases.filter(isIntegrationEnabled)
+    }
+
+    func isIntegrationEnabled(_ id: IntegrationID) -> Bool {
+        defaults.bool(forKey: Key.integration(id))
+    }
+
+    func setIntegration(_ id: IntegrationID, enabled: Bool) {
+        set(enabled, forKey: Key.integration(id))
     }
 
     func applyLaunchAtLoginDefaultIfNeeded() {

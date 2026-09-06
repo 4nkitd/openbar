@@ -148,7 +148,7 @@ final class ProgressRingView: NSView {
 
 /// Softly rounded tonal container for grouped rows. Depth comes from tonal
 /// separation (drawn per-appearance), not shadows or borders.
-final class RoundedGroupView: NSView {
+class RoundedGroupView: NSView {
     let stack = NSStackView()
 
     var cornerRadius: CGFloat = 10
@@ -248,12 +248,18 @@ final class PillLabel: NSView {
 
 /// Compact linear bar used for the secondary window, subordinate to the hero ring.
 final class ThinBarView: NSView {
-    var progress = 0 {
-        didSet { needsDisplay = true }
+    var progress: Double = 0 {
+        didSet {
+            if progress != oldValue { needsDisplay = true }
+            setAccessibilityRole(.progressIndicator)
+            setAccessibilityValue(NSNumber(value: progress))
+            setAccessibilityMinValue(0)
+            setAccessibilityMaxValue(100)
+        }
     }
 
     var barColor: NSColor = AppBranding.accentColor {
-        didSet { needsDisplay = true }
+        didSet { if barColor != oldValue { needsDisplay = true } }
     }
 
     override func draw(_ dirtyRect: NSRect) {

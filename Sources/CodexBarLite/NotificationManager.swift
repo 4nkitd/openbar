@@ -4,43 +4,47 @@ import UserNotifications
 final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     private struct WindowState: Codable {
         let usedPercent: Int
-        let resetAt: Int
+        let resetAt: TimeInterval?
     }
 
-    private let center = UNUserNotificationCenter.current()
+    private lazy var center = UNUserNotificationCenter.current()
     private let settings: SettingsStore
     private let defaults = UserDefaults.standard
+    private var requestedAuthorization = false
 
     init(settings: SettingsStore) {
         self.settings = settings
         super.init()
-        center.delegate = self
+        if Bundle.main.bundleURL.pathExtension == "app" { center.delegate = self }
     }
 
     func requestAuthorizationIfNeeded() {
-        guard settings.notificationsEnabled else { return }
+        guard Bundle.main.bundleURL.pathExtension == "app", settings.notificationsEnabled, !requestedAuthorization else { return }
+        requestedAuthorization = true
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
-    func evaluate(_ usage: CodexUsage) {
-        evaluate(usage.rateLimit.primaryWindow, name: "Primary", key: "primary")
-        if let secondary = usage.rateLimit.secondaryWindow {
-            evaluate(secondary, name: "Secondary", key: "secondary")
+    func evaluate(_ providers: [ProviderUsage]) {
+        for provider in providers {
+            for limit in provider.limits {
+                evaluate(limit, provider: provider.name, key: "\(provider.id).\(limit.cadence.rawValue).\(limit.displayLabel)")
+            }
         }
     }
 
-    private func evaluate(_ window: UsageWindow, name: String, key: String) {
+    private func evaluate(_ window: ProviderLimit, provider: String, key: String) {
         let stateKey = "notificationState.\(key)"
         let previous = defaults.data(forKey: stateKey).flatMap { try? JSONDecoder().decode(WindowState.self, from: $0) }
-        let current = WindowState(usedPercent: window.usedPercent, resetAt: window.resetAt)
+        let usedPercent = Int(window.usedPercent)
+        let current = WindowState(usedPercent: usedPercent, resetAt: window.resetAt?.timeIntervalSince1970)
 
         if let previous {
-            if settings.notifyWhenReset, window.resetAt != previous.resetAt, window.usedPercent < previous.usedPercent {
-                send(title: "\(name) credits reset", body: "Codex usage is back to \(100 - window.usedPercent)% remaining.", id: "\(key)-reset-\(window.resetAt)")
+            if settings.notifyWhenReset, let reset = current.resetAt, let oldReset = previous.resetAt, reset - oldReset > 60, usedPercent < previous.usedPercent {
+                send(title: "\(provider) quota reset", body: "\(window.displayLabel) is back to \(100 - usedPercent)% remaining.", id: "\(key)-reset-\(current.resetAt ?? 0)")
             } else {
-                notifyThreshold(80, previous: previous.usedPercent, current: window.usedPercent, name: name, key: key, enabled: settings.notifyAt80)
-                notifyThreshold(90, previous: previous.usedPercent, current: window.usedPercent, name: name, key: key, enabled: settings.notifyAt90)
-                notifyThreshold(100, previous: previous.usedPercent, current: window.usedPercent, name: name, key: key, enabled: settings.notifyWhenExhausted)
+                notifyThreshold(80, previous: previous.usedPercent, current: usedPercent, provider: provider, window: window.displayLabel, key: key, enabled: settings.notifyAt80)
+                notifyThreshold(90, previous: previous.usedPercent, current: usedPercent, provider: provider, window: window.displayLabel, key: key, enabled: settings.notifyAt90)
+                notifyThreshold(100, previous: previous.usedPercent, current: usedPercent, provider: provider, window: window.displayLabel, key: key, enabled: settings.notifyWhenExhausted)
             }
         }
 
@@ -49,14 +53,15 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    private func notifyThreshold(_ threshold: Int, previous: Int, current: Int, name: String, key: String, enabled: Bool) {
+    private func notifyThreshold(_ threshold: Int, previous: Int, current: Int, provider: String, window: String, key: String, enabled: Bool) {
         guard enabled, previous < threshold, current >= threshold else { return }
-        let title = threshold == 100 ? "\(name) credits exhausted" : "\(name) usage reached \(threshold)%"
-        let body = threshold == 100 ? "Codex has no remaining credits in this window." : "\(100 - current)% remains in this Codex window."
+        let title = threshold == 100 ? "\(provider) quota exhausted" : "\(provider) usage reached \(threshold)%"
+        let body = threshold == 100 ? "No quota remains in \(window)." : "\(100 - current)% remains in \(window)."
         send(title: title, body: body, id: "\(key)-\(threshold)-\(Date().timeIntervalSince1970)")
     }
 
     private func send(title: String, body: String, id: String) {
+        guard Bundle.main.bundleURL.pathExtension == "app" else { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
