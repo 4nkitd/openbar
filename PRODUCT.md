@@ -12,6 +12,8 @@ Primary: an individual developer who uses one or more AI coding subscriptions on
 
 ## Product Purpose
 
+The native fork is now named **OpenBar** and maintained at `https://github.com/4nkitd/openbar`. It supports multiple named accounts per integration. The website's historical CodexBar Lite branding is intentionally unchanged; README documents current native behavior.
+
 The multi-provider changes below are unreleased source behavior. The published landing page and v0.2.5 release remain Codex-only until a coordinated release updates them.
 
 CodexBar Lite is a native macOS menu bar app that shows quota windows and reset times for OpenAI Codex, Claude Code, OpenCode Go, GitHub Copilot, and Gemini Antigravity. Each enabled integration gets its own linear progress bars. It notifies at 80%, 90%, exhaustion, and quota reset.
@@ -34,7 +36,7 @@ Usage comes from provider HTTP APIs, never browser scraping or provider CLI exec
 - Reads supported providers' existing local OAuth stores and makes direct HTTPS requests to first-party usage endpoints.
 - No Chrome/browser-profile access, cookies, Accessibility, Screen Recording, Full Disk Access, provider CLI usage collection, third-party backend, or CodexBar account.
 - GitHub and OpenCode Go tokens entered in Settings are stored in the macOS Keychain.
-- Google OAuth client secrets are not bundled. Antigravity can use an existing access token; token refresh requires matching runtime OAuth client credentials.
+- Google OAuth client secrets are not bundled. Antigravity can use an existing access token; token refresh requires matching OAuth client credentials saved locally in Keychain or supplied at runtime.
 - No telemetry or analytics. Stores preferences, timestamped quota caches and explicitly saved credentials in Keychain.
 - Settings: tabbed General, Integrations, Notifications, and About panes; provider toggles, secure token fields, refresh every 1/5/15/30 minutes, Launch at Login, percentage used vs. remaining, automatic update checks, and notification controls.
 - Deliberately excludes dashboards, browser extensions, graphs, and themes — scope stays "menu bar quotas, nothing more."

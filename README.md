@@ -1,178 +1,95 @@
-<h1 align="center">CodexBar Lite</h1>
+# OpenBar
 
-<p align="center">
-  <strong>Native AI coding quota tracker for your macOS menu bar.</strong><br>
-  Codex, Claude Code, OpenCode Go, GitHub Copilot, and Gemini Antigravity.<br>
-  HTTP-only usage collection. No browser cookies, telemetry, or third-party backend.<br>
-  <a href="https://getcodexbar.xyz"><strong>getcodexbar.xyz</strong></a>
-</p>
+Native macOS menu-bar monitoring for your AI coding subscriptions. See each account's quota and reset times without keeping provider dashboards open.
 
-> CodexBar Lite is an independent community project and is not affiliated with OpenAI.
+[Source](https://github.com/4nkitd/openbar) · [Issues](https://github.com/4nkitd/openbar/issues)
 
-> **Unreleased development build.** Multi-provider support and the redesigned popover described here are source changes, not part of the linked v0.2.5 download. The landing page and older screenshots still describe that published Codex-only release.
+**Development build.** OpenBar has no published release yet. This repository is private. The inherited `docs/` website still describes the original CodexBar Lite release and is not the OpenBar website.
 
-<p align="center">
-  <a href="https://github.com/wei-b0/codexbar-lite/releases/latest">
-    <img alt="Download CodexBar Lite" src="https://img.shields.io/badge/Download-Latest%20Release-0A7CFF?style=for-the-badge&logo=apple">
-  </a>
-</p>
+## What it shows
 
-<p align="center">
-  <img alt="Latest release" src="https://img.shields.io/github/v/release/wei-b0/codexbar-lite?display_name=tag">
-  <img alt="Platform" src="https://img.shields.io/badge/macOS-13%2B-black">
-  <img alt="Architecture" src="https://img.shields.io/badge/Apple%20Silicon-arm64-black">
-  <img alt="Swift" src="https://img.shields.io/badge/Swift-5.10%2B-F05138">
-</p>
+- OpenAI Codex, Claude Code, OpenCode Go, GitHub Copilot and Google Antigravity.
+- Multiple named accounts per integration, with independent credentials, refresh state, cached readings and enable/disable switches.
+- A compact progress bar for each account's most-constrained quota. Expand a provider to see every window and reset time.
+- A menu-bar summary of the most-constrained enabled account, with the account named in its tooltip.
+- Used or remaining percentages, light/dark appearance, scrollable expanded details and keyboard controls.
+- Notifications at 80%, 90%, exhaustion and quota reset. Stale cache values do not trigger alerts.
 
-<p align="center">
-  <a href="https://www.producthunt.com/products/codexbar-lite/launches/codexbar-lite?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-codexbar-lite" target="_blank" rel="noopener noreferrer"><img alt="CodexBar Lite - Privacy-first Codex tracker for your macOS menu bar | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1205642&amp;theme=light&amp;t=1787548580050"></a>
-</p>
+## Add accounts
 
-<p align="center">
-  <img src="assets/banner.png" alt="CodexBar Lite usage popover open from a blue 63% status ring in the macOS menu bar" width="720">
-</p>
+Open **Integrations…** from the popover and choose a provider.
 
-## Why CodexBar Lite?
-
-CodexBar Lite exists because checking AI coding quotas should not require a dashboard, browser cookies, or unrelated system permissions.
-
-It reuses provider credentials already on your Mac, lets you add OpenCode Go and GitHub tokens securely, and queries provider HTTP APIs directly.
-
-## Features
-
-- Native macOS menu bar app
-- Individual progress bars and reset times for every enabled provider
-- Compact summaries show the most-constrained window. Expand a provider to see all its windows; Antigravity accounts are grouped together.
-- OpenAI Codex, Claude Code, OpenCode Go, GitHub Copilot, and Gemini Antigravity
-- Notifications at 80%, 90%, exhaustion, and quota reset
-- Percentage used or percentage remaining - your choice
-- Automatic refresh with cached usage when offline
-- Each provider updates as its request finishes. Refresh respects per-provider retry delays, including server rate limits.
-- Launch at login and over-the-air updates with Sparkle
-- Per-provider enable and disable controls
-
-No dashboards, browser extensions, graphs, themes, or CodexBar account. The menu bar is still the entire job.
-
-## Security model
-
-Usage trackers often ask you to hand over access to sensitive parts of your Mac just to display a number.
-
-> **CodexBar Lite does not access browser profiles or cookies, invoke provider CLIs for usage, request Accessibility, Screen Recording, or Full Disk Access, or send credentials through a third-party backend.**
-
-CodexBar Lite:
-
-- Reads provider OAuth credentials from their existing local files or Keychain entries
-- Stores manually configured OpenCode Go and GitHub tokens in the macOS Keychain
-- Makes usage requests directly to OpenAI, Anthropic, OpenCode, GitHub, and Google
-- Stores local preferences, credential caches and timestamped quota readings
-
-It does not:
-
-- Access browser cookies or Chrome profiles
-- Upload credentials to any third-party server
-- Scrape provider dashboards
-- Invoke `codex`, `claude`, `opencode`, `gh`, or Antigravity to collect usage
-- Run telemetry or analytics
-
-Credentials are sent only to the provider that issued them. GitHub and OpenCode Go tokens entered in Settings are stored in the macOS Keychain.
-
-## How it works
-
-Open the app and enable the providers you use in **Settings → Integrations**. Codex can launch `codex login`; Claude and Antigravity reuse existing OAuth sign-ins; OpenCode Go and GitHub tokens can be entered directly.
-
-Depending on enabled providers, CodexBar Lite can read:
-
-```text
-~/.codex/auth.json
-~/.local/share/opencode/auth.json
-~/.local/share/opencode/antigravity-accounts.json
-```
-
-Claude Code and Antigravity credentials may also come from their existing macOS Keychain entries.
-
-### Provider access
-
-| Provider | Usage source | Authentication |
+| Provider | Account setup | Usage source |
 | --- | --- | --- |
-| Codex | `chatgpt.com/backend-api/wham/usage`, with the legacy Codex endpoint as a 404 fallback | Existing Codex OAuth session |
-| Claude Code | `api.anthropic.com/api/oauth/usage` | Existing Claude Code or OpenCode OAuth session |
-| OpenCode Go | `opencode.ai/zen/go/v1/usage` | OpenCode credentials or a key entered in Settings |
-| GitHub Copilot | `api.github.com/copilot_internal/user` | Token entered in Settings |
-| Antigravity | Google Code Assist `loadCodeAssist`, quota summary, or model quotas | Existing Antigravity Keychain or OpenCode plugin credentials |
+| Codex | Use the current CLI login or choose a separate account's `auth.json` file | OpenAI Codex usage API |
+| Claude Code | Use the current Claude/OpenCode login or choose a separate Claude credentials JSON or OpenCode auth JSON | Anthropic OAuth usage API |
+| OpenCode Go | Use OpenCode's current key, or add separately named API keys | OpenCode Go usage API |
+| GitHub Copilot | Add a separate compatible token for each account | GitHub's internal Copilot quota API |
+| Antigravity | Import the current local sign-ins or choose a separate Google token / Antigravity account JSON file | Google Code Assist quota APIs |
 
-Some endpoints are unofficial and can change. GitHub's internal quota endpoint does **not** accept every personal access token. A saved token is marked verified only after a successful quota response. An authorization failure is displayed, never replaced with an estimated percentage. Claude polling is read-only and does not submit model inference requests.
+Name additional accounts, such as **Personal** and **Work**, then enter the token or select the existing credential file. Accounts appear under their provider in the popover. **Edit** changes the label or credentials. **Remove** removes the OpenBar configuration and its saved token, not the original sign-in file. Disabling one account does not disable its siblings.
 
-Antigravity contains no embedded Google OAuth client secrets. A still-valid access token from the existing login can be used directly. Refresh-only credentials or expired access tokens require a matching `ANTIGRAVITY_OAUTH_CLIENT_ID` / `ANTIGRAVITY_OAUTH_CLIENT_SECRET` pair in the app process environment, or the corresponding `GEMINI_OAUTH_CLIENT_ID` / `GEMINI_OAUTH_CLIENT_SECRET` pair. Finder-launched apps do not inherit a terminal's environment; launch from the configured environment when using this path. Never commit these values. Without them, refresh reports a setup error instead of silently substituting credentials.
+OpenBar does not implement new OAuth sign-in flows. Extra OAuth accounts must already be signed in through their provider tools. Select the file for the intended account; do not use one shared file for different identities. The **Use current login** entry follows the active sign-in. If an imported file contains several Google accounts, that source shows all of them; use separate credential files when you need independent controls for each one.
 
-Refreshing is limited to once per minute per provider, or once per five minutes for Claude. Failed requests back off up to 30 minutes; a longer server `Retry-After` is respected. The global refresh interval still determines when eligible providers are polled. Display preference changes and opening the popover do not trigger HTTP requests.
+GitHub's unofficial quota endpoint does not accept every personal access token. The account is marked **Verified** only after a successful quota response. Saving a token alone is not proof of access.
 
-Quota snapshots store a separate success timestamp per integration in `~/Library/Application Support/CodexBarLite/quotas-v2.json`. Cached data is identified as saved or stale. The old `usage.json` and first-pass `integrations.json` caches are not migrated. Clearing a configured token disables that provider and drops its cached readings. Codex OAuth refresh preserves unknown auth-file fields; refreshed Claude credentials are cached separately in Keychain and tied to the source sign-in.
+### Antigravity OAuth setup
 
-## Requirements
+Google OAuth client secrets are **not embedded in the app or repository**. OpenBar can use a valid access token from an existing login. Refreshing an expired token needs the OAuth client belonging to that login.
 
-- macOS 13 Ventura or newer
-- Apple Silicon Mac (arm64)
-- At least one supported provider account
+Choose **Integrations → Antigravity → Configure OAuth…** and save the appropriate Antigravity or Gemini client ID and client secret. These values stay in the macOS Keychain. They are not provider account tokens and cannot replace an account's existing sign-in.
 
-## Install
+Alternatively, supply `ANTIGRAVITY_OAUTH_CLIENT_ID` / `ANTIGRAVITY_OAUTH_CLIENT_SECRET`, or `GEMINI_OAUTH_CLIENT_ID` / `GEMINI_OAUTH_CLIENT_SECRET`, in the app's process environment. Finder-launched apps do not inherit terminal environment variables. Never commit these values.
 
-1. [Download the latest release](https://github.com/wei-b0/codexbar-lite/releases/download/v0.2.5/CodexBarLite-0.2.5-arm64.dmg).
-2. Open the downloaded `.dmg`.
-3. Drag CodexBar Lite into `/Applications`.
-4. Open it.
+For one-time local setup from an already configured environment, launch `dist/OpenBar.app/Contents/MacOS/OpenBar --import-google-oauth-clients`. OpenBar itself saves the complete client pairs to Keychain, so no external helper owns those entries. The command logs only the number of imported clients. Subsequent launches can use Keychain without those environment variables.
 
-Future versions install through **CodexBar Lite → Check for Updates…**.
+## Privacy and storage
 
-## Settings
+All quota collection uses in-process HTTP requests to the issuing provider. There is no browser scraping, browser-cookie access, local usage estimation, telemetry or OpenBar backend. Claude polling calls the read-only OAuth usage endpoint; it does not submit model inference requests.
 
-- Refresh every 1, 5, 15, or 30 minutes
-- Launch at Login
-- Percentage used or remaining
-- Automatic update checks
-- Notification controls
-- Provider toggles
-- Secure OpenCode Go and GitHub token fields
+- Account names, file paths, enable switches and preferences use the `in.4nkitd.openbar` UserDefaults domain.
+- Account API tokens and refreshed Claude credential caches use Keychain. The internal service name `dev.vaibhav.codexbar.integrations` is deliberately retained for compatibility with the earlier development build.
+- Google OAuth client configuration uses the separate `in.4nkitd.openbar.oauth` Keychain service.
+- Quota snapshots live in `~/Library/Application Support/OpenBar/accounts-v1.json`, written atomically with mode `0600` and a separate success timestamp per configured account.
+- Existing preferences and `CodexBarLite/quotas-v2.json` readings are copied on first launch without deleting the original data. Launch-at-login registration is tied to the new app bundle; check the switch after installing OpenBar.
+- Codex token refresh updates only the selected account's auth file and preserves unrelated JSON fields. Claude refresh caches are scoped to their configured account and source sign-in.
 
-<p align="center">
-  <img src="assets/screenshots/preferences.png" alt="CodexBar Lite tabbed General settings window" width="499">
-</p>
+Manual refreshes observe a minimum interval of one minute per account, or five minutes for Claude. Failures back off up to 30 minutes, and a longer server `Retry-After` is respected. Opening the popover or changing display preferences does not trigger requests.
 
-## Build from source
+## Build and run
 
-Requires Swift 5.10 or newer and Apple Command Line Tools.
+Requires macOS 13 or later and Swift 5.10 or later. The app is AppKit-based; Sparkle is its only SwiftPM dependency.
 
 ```bash
+git clone git@github.com:4nkitd/openbar.git
+cd openbar
 swift build -Xswiftc -warnings-as-errors
 BUILD_ONLY=1 ./scripts/install.sh
+open dist/OpenBar.app
 ```
 
-This builds `dist/CodexBarLite.app` without replacing the installed app. Running `./scripts/install.sh` without `BUILD_ONLY=1` replaces `/Applications/CodexBarLite.app` and launches it.
+This creates `dist/OpenBar.app` without replacing anything in `/Applications`. To install there, run `./scripts/install.sh` without `BUILD_ONLY=1`. It replaces `/Applications/OpenBar.app`, not the old CodexBar Lite app.
 
-Run the offline regression checks and native UI snapshots:
+Enable launch at login in General settings, or launch the installed app once with `--enable-launch-at-login`. If macOS requires approval, allow OpenBar under Login Items. `--diagnostics` prints account refresh status and Keychain error codes to stderr without credential values.
+
+The blue-dot icon is retained from the original project. Build output and local credentials are not committed.
+
+### Verification
 
 ```bash
 bash scripts/check.sh
 ```
 
-The checks compile the actual app sources with `swiftc`, so they run with Command Line Tools alone. They do not require XCTest, access provider credentials, send live requests, or modify your app preferences. They cover parsers, auth-file preservation, refresh cancellation/backoff, cached timestamps, view reuse, expansion, scrolling, and light/dark/error/empty states. The printed timings measure the fixture UI, not live provider latency.
+The regression checks compile the actual sources with `swiftc` and work with Command Line Tools alone, without XCTest. They use fixtures and an intercepted HTTP transport, not live credentials. Checks cover response parsing, account-specific credential routing, independent failures and retry delays, cancellation/removal, migration, UI view reuse, expandable scrolling, and light/dark/error/empty states. Test screenshots and caches go to a temporary directory, or `CHECK_OUTPUT_DIR`.
 
-Create a signed Sparkle release:
+### Updates and releases
 
-```bash
-./scripts/release.sh <version> <build-number>
-```
+Automatic updates are disabled by default. OpenBar does not use CodexBar Lite's update feed or signing key. The checked-in `appcast.xml` is an empty OpenBar feed until a release is created.
 
-## Uninstall
+To configure updates, set an accessible HTTPS `SPARKLE_FEED_URL` and matching `SPARKLE_PUBLIC_KEY` when building. A private GitHub repository does not provide an anonymously accessible update feed. `scripts/release.sh <version> <build-number>` requires these settings and the matching Sparkle signing key in Keychain. No release credentials are bundled.
 
-Quit CodexBar Lite and move it from `/Applications` to Trash.
+## Credits
 
-Optional local-data cleanup:
+OpenBar is maintained by [4nkitd](https://github.com/4nkitd), based on [CodexBar Lite](https://github.com/wei-b0/codexbar-lite). HTTP integration references came from [Headroom](https://github.com/4nkitd/headroom) and [OpenCode Bar](https://github.com/opgginc/opencode-bar). See [third-party notices](THIRD_PARTY_NOTICES.md).
 
-```bash
-rm -rf ~/Library/Application\ Support/CodexBarLite
-defaults delete dev.vaibhav.codexbar
-```
-
-## Independent by design
-
-CodexBar Lite is an independent utility and is not affiliated with, endorsed by, or sponsored by OpenAI.
+OpenBar is independent of OpenAI, Anthropic, GitHub, Google and OpenCode. Provider names and marks identify integrations, not affiliation or endorsement.
