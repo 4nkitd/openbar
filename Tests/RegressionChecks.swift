@@ -27,17 +27,36 @@ private func sample(_ id: IntegrationID, account: String? = nil, used: Double = 
 }
 
 private actor FetchProbe {
-    var calls: [IntegrationID: Int] = [:]
-    var gates: [IntegrationID: CheckedContinuation<[ProviderUsage], Error>] = [:]
+    var calls: [String: Int] = [:]
+    var gates: [String: CheckedContinuation<[ProviderUsage], Error>] = [:]
 
-    func fetch(_ id: IntegrationID) async throws -> [ProviderUsage] {
+    func fetch(_ account: IntegrationAccount) async throws -> [ProviderUsage] {
+        let id = account.id
         calls[id, default: 0] += 1
         return try await withCheckedThrowingContinuation { gates[id] = $0 }
     }
 
-    func complete(_ id: IntegrationID, _ result: Result<[ProviderUsage], Error>) {
+    func complete(_ id: String, _ result: Result<[ProviderUsage], Error>) {
         gates.removeValue(forKey: id)?.resume(with: result)
     }
+}
+
+private final class AccountHTTPProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let authorization = request.value(forHTTPHeaderField: "Authorization")
+        let accountID = request.value(forHTTPHeaderField: "chatgpt-account-id")
+        let personal = authorization == "Bearer personal-token" && accountID == "personal"
+        let work = authorization == "Bearer work-token" && accountID == "work"
+        let permitted = request.url?.host == "chatgpt.com" && (personal || work)
+        let response = HTTPURLResponse(url: request.url!, statusCode: permitted ? 200 : 403, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+        let body = json("{\"plan_type\":\"pro\",\"rate_limit\":{\"primary_window\":{\"used_percent\":\(personal ? 17 : 43),\"limit_window_seconds\":18000}}}")
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }
 
 @main
@@ -91,41 +110,101 @@ private struct RegressionChecks {
             try check(deadline.timeIntervalSinceNow > 895, "Parse Retry-After header")
         }
         print("PASS response parsers, malformed data, auth metadata preservation")
+        let clients = try GoogleOAuthClient.fromEnvironment(["ANTIGRAVITY_OAUTH_CLIENT_ID": "fixture-id", "ANTIGRAVITY_OAUTH_CLIENT_SECRET": "fixture-secret"])
+        try check(clients.count == 1 && clients[0].0 == "antigravity", "Local OAuth setup validates a complete client pair")
+        do {
+            _ = try GoogleOAuthClient.fromEnvironment(["GEMINI_OAUTH_CLIENT_ID": "fixture-id"])
+            throw CheckFailure(description: "Incomplete client pair accepted")
+        } catch IntegrationError.notConfigured {}
 
         let probe = FetchProbe()
-        let cache = QuotaCache(url: output.appendingPathComponent("test-cache.json"))
+        let codexAccount = IntegrationAccount.current(.codex)
+        let claudeAccount = IntegrationAccount.current(.claude)
+        let cache = QuotaCache(url: output.appendingPathComponent("test-cache-\(UUID().uuidString).json"))
         let store = QuotaStore(cache: cache) { try await probe.fetch($0) }
         var fresh = 0
         store.onFresh = { _ in fresh += 1 }
-        store.setEnabled([.codex, .claude])
+        store.setAccounts([codexAccount, claudeAccount])
+        await store.restore()
         store.refresh()
         try await wait { await probe.calls.count == 2 }
-        await probe.complete(.codex, .success([codex]))
-        try await wait { store.states[.codex]?.isRefreshing == false }
-        try check(store.states[.claude]?.isRefreshing == true, "Fast provider must render before slow provider")
+        await probe.complete(codexAccount.id, .success([codex]))
+        try await wait { store.states[codexAccount.id]?.isRefreshing == false }
+        try check(store.states[claudeAccount.id]?.isRefreshing == true, "Fast provider must render before slow provider")
         try check(fresh == 1, "Fresh notification only")
         store.refresh()
-        let codexCalls = await probe.calls[.codex]
+        let codexCalls = await probe.calls[codexAccount.id]
         try check(codexCalls == 1, "Manual refresh must obey cooldown")
-        store.setEnabled([.codex])
-        await probe.complete(.claude, .success([claude]))
+        store.setAccounts([codexAccount])
+        await probe.complete(claudeAccount.id, .success([claude]))
         try await Task.sleep(nanoseconds: 20_000_000)
-        try check(store.states[.claude]?.providers.isEmpty == true, "Disabled provider's late response must be ignored")
+        try check(store.states[claudeAccount.id] == nil, "Disabled account's late response must be ignored")
         store.refresh(now: Date().addingTimeInterval(61))
-        try await wait { await probe.calls[.codex] == 2 }
+        try await wait { await probe.calls[codexAccount.id] == 2 }
         let retryDate = Date().addingTimeInterval(1200)
-        await probe.complete(.codex, .failure(IntegrationError.rateLimited(retryDate)))
-        try await wait { store.states[.codex]?.isRefreshing == false }
-        try check(store.states[.codex]?.updatedAt != nil && fresh == 1, "Network failure retains timestamp, never notifies from cache")
-        try check(store.states[.codex]!.retryAt! >= retryDate, "Respect server Retry-After")
-        store.credentialsChanged(.codex)
-        try await wait { await probe.calls[.codex] == 3 }
-        try check(store.states[.codex]?.providers.isEmpty == true, "Credential changes invalidate old account cache")
-        await probe.complete(.codex, .success([codex]))
-        try await wait { store.states[.codex]?.isRefreshing == false }
+        await probe.complete(codexAccount.id, .failure(IntegrationError.rateLimited(retryDate)))
+        try await wait { store.states[codexAccount.id]?.isRefreshing == false }
+        try check(store.states[codexAccount.id]?.updatedAt != nil && fresh == 1, "Network failure retains timestamp, never notifies from cache")
+        try check(store.states[codexAccount.id]!.retryAt! >= retryDate, "Respect server Retry-After")
+        store.credentialsChanged(codexAccount.id)
+        try await wait { await probe.calls[codexAccount.id] == 3 }
+        try check(store.states[codexAccount.id]?.providers.isEmpty == true, "Credential changes invalidate old account cache")
+        await probe.complete(codexAccount.id, .success([codex]))
+        try await wait { store.states[codexAccount.id]?.isRefreshing == false }
         let saved = await cache.load()
         try check(saved.allSatisfy { !$0.providers.isEmpty }, "Cache contains complete quota entries")
         print("PASS progressive refresh, cancellation, cooldown, backoff, credential invalidation")
+
+        let personalPath = output.appendingPathComponent("personal-auth.json")
+        let workPath = output.appendingPathComponent("work-auth.json")
+        try writePrivateData(json(#"{"tokens":{"access_token":"personal-token","account_id":"personal"}}"#), to: personalPath)
+        try writePrivateData(json(#"{"tokens":{"access_token":"work-token","account_id":"work"}}"#), to: workPath)
+        let personal = IntegrationAccount(id: "personal", integration: .codex, label: "Personal", source: .file, credentialPath: personalPath.path, isEnabled: true)
+        let work = IntegrationAccount(id: "work", integration: .codex, label: "Work", source: .file, credentialPath: workPath.path, isEnabled: true)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AccountHTTPProtocol.self]
+        let isolatedService = IntegrationService(configuration: configuration)
+        let personalUsage = try await isolatedService.fetch(personal)
+        let workUsage = try await isolatedService.fetch(work)
+        try check(personalUsage[0].primary.usedPercent == 17 && workUsage[0].primary.usedPercent == 43, "HTTP requests must use each account's credentials and account ID")
+        try check(personalUsage[0].id != workUsage[0].id && workUsage[0].configurationID == work.id, "Quota identity must be account-scoped")
+        try check(personal.tokenKey != work.tokenKey && personal.claudeCacheKey != work.claudeCacheKey, "Secret and OAuth caches must be isolated")
+        for integration in [IntegrationID.claude, .antigravity] {
+            let missing = IntegrationAccount(id: UUID().uuidString, integration: integration, label: "Missing file", source: .file, credentialPath: output.appendingPathComponent(UUID().uuidString).path, isEnabled: true)
+            do {
+                _ = try await isolatedService.fetch(missing)
+                throw CheckFailure(description: "Explicit file account fell back to another login")
+            } catch IntegrationError.notConfigured {}
+        }
+        let claudeCleanup = IntegrationAccount.current(.claude)
+        try check(claudeCleanup.ownedKeychainKeys == [claudeCleanup.tokenKey, claudeCleanup.claudeCacheKey], "Claude cleanup must include its OAuth cache")
+        let multiProbe = FetchProbe()
+        let multiStore = QuotaStore(cache: QuotaCache(url: output.appendingPathComponent(UUID().uuidString))) { try await multiProbe.fetch($0) }
+        multiStore.setAccounts([personal, work])
+        await multiStore.restore()
+        multiStore.refresh()
+        try await wait { await multiProbe.calls.count == 2 }
+        await multiProbe.complete(work.id, .failure(IntegrationError.http("Codex", 403)))
+        await multiProbe.complete(personal.id, .success(personalUsage))
+        try await wait { multiStore.states[personal.id]?.isRefreshing == false && multiStore.states[work.id]?.isRefreshing == false }
+        try check(multiStore.presentationStates[.codex]?.providers.count == 1, "A failed account must not hide another account")
+        try check(multiStore.presentationStates[.codex]?.accountStatuses[work.id]?.message != nil, "Failed accounts retain separate status")
+        multiStore.credentialsChanged(work.id)
+        try check(multiStore.states[personal.id]?.providers.count == 1, "Editing Work must not clear Personal")
+        try await wait { await multiProbe.calls[work.id] == 2 }
+        multiStore.setAccounts([personal])
+        await multiProbe.complete(work.id, .success(workUsage))
+        try await Task.sleep(nanoseconds: 20_000_000)
+        try check(multiStore.states[work.id] == nil, "Removed account must not reappear from a late response")
+        let migrated = SettingsStore.migratedPreferences(current: ["displayMode": "used"], legacy: ["displayMode": "remaining", "integration.claude.enabled": true, "unrelated": "ignore"])
+        try check(migrated["displayMode"] as? String == "used" && migrated["integration.claude.enabled"] as? Bool == true && migrated["unrelated"] == nil, "Rebrand migration preserves new choices and copies only known preferences")
+        let oldCache = output.appendingPathComponent("old-cache.json")
+        let newCache = output.appendingPathComponent("migrated-\(UUID().uuidString).json")
+        try writePrivateData(JSONEncoder().encode([CachedQuota(integration: .codex, providers: [codex], updatedAt: Date())]), to: oldCache)
+        let migrationCache = QuotaCache(url: newCache, legacyURL: oldCache)
+        let migratedEntries = await migrationCache.load()
+        try check(migratedEntries.count == 1 && FileManager.default.fileExists(atPath: oldCache.path) && FileManager.default.fileExists(atPath: newCache.path), "Cache migration copies readings without deleting legacy data")
+        print("PASS multi-account HTTP credential routing, failure isolation, removal and rebrand migration")
 
         let app = NSApplication.shared
         let appDelegate = CheckAppDelegate()
@@ -169,13 +248,15 @@ private struct RegressionChecks {
         states[.claude]?.message = "Access denied. Sign in again."
         states[.claude]?.updatedAt = Date().addingTimeInterval(-3600)
         controller.update(states: states, enabled: enabled, displayMode: .used)
+        let visibleStrings = descendants(controller.view).compactMap { ($0 as? NSTextField)?.stringValue }
+        try check(!visibleStrings.contains(where: { $0.contains("Last success") || $0.contains("Saved usage") }), "Do not show fetch-age prose in the popover")
         window.setContentSize(controller.preferredContentSize)
         try snapshot(controller.view, to: output.appendingPathComponent("popover-error.png"))
         controller.update(states: [:], enabled: [], displayMode: .used)
         window.setContentSize(controller.preferredContentSize)
         try snapshot(controller.view, to: output.appendingPathComponent("popover-empty.png"))
-        let preferences = SettingsWindowController(settings: .shared, onCheckForUpdates: {}, onSignIn: {}, onCredentialsChanged: { _ in }, canCheckForUpdates: { false })
-        preferences.updateStatuses(states)
+        let preferences = SettingsWindowController(settings: .shared, onCheckForUpdates: {}, onSignIn: {}, onCredentialsChanged: { _ in }, onOAuthChanged: {}, canCheckForUpdates: { false })
+        preferences.updateStatuses(store.states)
         preferences.show()
         preferences.window?.appearance = NSAppearance(named: .darkAqua)
         try snapshot(preferences.window!.contentView!, to: output.appendingPathComponent("settings-dark.png"))
