@@ -27,7 +27,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     func evaluate(_ providers: [ProviderUsage]) {
         for provider in providers {
             for limit in provider.limits {
-                evaluate(limit, provider: provider.name, key: "\(provider.id).\(limit.cadence.rawValue).\(limit.displayLabel)")
+                evaluate(limit, provider: provider.name + (provider.accountLabel.map { " / \($0)" } ?? ""), key: "\(provider.id).\(limit.cadence.rawValue).\(limit.displayLabel)")
             }
         }
     }

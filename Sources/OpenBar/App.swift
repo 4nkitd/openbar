@@ -1,12 +1,13 @@
 import AppKit
 import Sparkle
+import ServiceManagement
 
 @main
 @MainActor
-final class CodexBarLiteApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     static func main() {
         let app = NSApplication.shared
-        let delegate = CodexBarLiteApp()
+        let delegate = OpenBarApp()
         app.delegate = delegate
         app.run()
         withExtendedLifetime(delegate) {}
@@ -25,8 +26,9 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate, NSPopoverDelegate 
     private var loginTimer: Timer?
     private var keyMonitor: Any?
     private var interval: TimeInterval = 0
-    private var resetting = false
+    private var resetting = Set<String>()
     private var statusKey = ""
+    private var diagnostics = ""
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -39,20 +41,38 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate, NSPopoverDelegate 
         popover.delegate = self
         controller.onRefresh = { [weak self] in self?.store.refresh() }
         controller.onOpenSettings = { [weak self] in self?.showSettings() }
-        controller.onUseResetCredit = { [weak self] in self?.useResetCredit() }
+        controller.onUseResetCredit = { [weak self] id in self?.useResetCredit(accountID: id) }
         store.onChange = { [weak self] in self?.render() }
         store.onFresh = { [weak self] in self?.notifications.evaluate($0) }
         settings.applyLaunchAtLoginDefaultIfNeeded()
+        if ProcessInfo.processInfo.arguments.contains("--enable-launch-at-login"), Bundle.main.bundleURL.pathExtension == "app" {
+            do {
+                try settings.setLaunchAtLogin(true)
+                let status = SMAppService.mainApp.status == .enabled ? "enabled" : "requires approval in System Settings"
+                FileHandle.standardError.write(Data("Launch at login: \(status).\n".utf8))
+            } catch {
+                FileHandle.standardError.write(Data("Launch at login setup failed: \(error.localizedDescription)\n".utf8))
+            }
+        }
         configureUpdater()
         buildActionsMenu()
         configureTimer()
         notifications.requestAuthorizationIfNeeded()
-        NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged), name: .codexBarSettingsDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged), name: .openBarSettingsDidChange, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.store.refresh() }
         }
-        store.setEnabled(settings.enabledIntegrations)
+        store.setAccounts(settings.enabledAccounts)
         Task {
+            if ProcessInfo.processInfo.arguments.contains("--import-google-oauth-clients") {
+                let result = await Task.detached {
+                    Result { try CredentialStore.importGoogleOAuthClients(environment: ProcessInfo.processInfo.environment) }
+                }.value
+                switch result {
+                case .success(let count): print("Imported \(count) Google OAuth client(s) into OpenBar's local Keychain entries.")
+                case .failure(let error): NSAlert(error: error).runModal()
+                }
+            }
             await store.restore()
             store.refresh()
         }
@@ -78,11 +98,21 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate, NSPopoverDelegate 
     }
 
     private func render() {
+        if ProcessInfo.processInfo.arguments.contains("--diagnostics") {
+            let summary = store.accounts.map { account in
+                let state = store.states[account.id] ?? IntegrationState()
+                return "\(account.integration.rawValue): \(state.status); \(state.providers.count) quota account(s)"
+            }.joined(separator: "\n")
+            if summary != diagnostics {
+                diagnostics = summary
+                FileHandle.standardError.write(Data((summary + "\n").utf8))
+            }
+        }
         if popover.isShown { updatePopover() }
         settingsWindow?.updateStatuses(store.states)
-        let candidates = store.enabled.flatMap { id in (store.states[id]?.providers ?? []).map { ($0, store.states[id]) } }
+        let candidates = store.accounts.flatMap { account in (store.states[account.id]?.providers ?? []).map { ($0, store.states[account.id]) } }
         let selected = candidates.max { $0.0.limitingWindow.usedPercent < $1.0.limitingWindow.usedPercent }
-        let warning = store.enabled.contains { store.states[$0]?.message != nil }
+        let warning = store.accounts.contains { store.states[$0.id]?.message != nil }
         let percent = selected.map { settings.displayMode == .used ? $0.0.limitingWindow.usedPercent : $0.0.limitingWindow.remainingPercent }
         let text = percent.map { "\(Int($0.rounded()))%" } ?? "—"
         let key = "\(text)-\(warning)-\(selected?.0.id ?? "")-\(settings.displayMode.rawValue)"
@@ -95,21 +125,21 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate, NSPopoverDelegate 
         button.attributedTitle = NSAttributedString(string: text + (warning ? " ⚠" : ""), attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.labelColor
         ])
-        button.toolTip = selected.map { "\($0.0.name): \($0.0.limitingWindow.displayLabel), \(text) \(settings.displayMode.rawValue)" } ?? "Configure integrations in Settings"
+        button.toolTip = selected.map { "\($0.0.name)\($0.0.accountLabel.map { " / \($0)" } ?? ""): \($0.0.limitingWindow.displayLabel), \(text) \(settings.displayMode.rawValue)" } ?? "Configure integrations in Settings"
         button.setAccessibilityLabel(button.toolTip)
     }
 
     private func updatePopover() {
-        controller.update(states: store.states, enabled: store.enabled, displayMode: settings.displayMode)
+        controller.update(states: store.presentationStates, enabled: store.enabled, displayMode: settings.displayMode)
     }
 
     @objc private func settingsChanged() {
         configureTimer()
         updater?.updater.automaticallyChecksForUpdates = settings.checkForUpdates
         notifications.requestAuthorizationIfNeeded()
-        let added = settings.enabledIntegrations.filter { !store.enabled.contains($0) }
-        if store.enabled != settings.enabledIntegrations { store.setEnabled(settings.enabledIntegrations) }
-        for id in added { store.refresh(only: id) }
+        let added = settings.enabledAccounts.filter { !store.accounts.contains($0) }
+        if store.accounts != settings.enabledAccounts { store.setAccounts(settings.enabledAccounts) }
+        for account in added { store.refresh(only: account.id) }
         render()
     }
 
@@ -133,7 +163,7 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate, NSPopoverDelegate 
         for (title, action, key) in [
             ("Refresh", #selector(refresh), "r"), ("Settings…", #selector(showSettings), ","),
             ("Sign In to Codex…", #selector(signIn), ""), ("Check for Updates…", #selector(checkForUpdates), ""),
-            ("Quit CodexBar Lite", #selector(quit), "q")
+            ("Quit OpenBar", #selector(quit), "q")
         ] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
             item.target = self
@@ -154,6 +184,10 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate, NSPopoverDelegate 
                 onCheckForUpdates: { [weak self] in self?.checkForUpdates() },
                 onSignIn: { [weak self] in self?.signIn() },
                 onCredentialsChanged: { [weak self] id in self?.store.credentialsChanged(id) },
+                onOAuthChanged: { [weak self] in
+                    guard let self else { return }
+                    for account in self.store.accounts where account.integration == .antigravity { self.store.credentialsChanged(account.id) }
+                },
                 canCheckForUpdates: { [weak self] in self?.updater != nil }
             )
         }
@@ -161,15 +195,15 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate, NSPopoverDelegate 
         settingsWindow?.show()
     }
 
-    private func useResetCredit() {
-        guard !resetting, store.enabled.contains(.codex), store.states[.codex]?.isRefreshing != true else { return }
-        resetting = true
+    private func useResetCredit(accountID: String) {
+        guard !resetting.contains(accountID), let account = store.accounts.first(where: { $0.id == accountID && $0.integration == .codex }), store.states[accountID]?.isRefreshing != true else { return }
+        resetting.insert(accountID)
         Task {
             let result: Result<ConsumeResetCreditsResponse, Error>
-            do { result = .success(try await service.consumeCodexResetCredit()) } catch { result = .failure(error) }
-            resetting = false
-            controller.showResetCreditResult(result)
-            if case .success = result { store.credentialsChanged(.codex) }
+            do { result = .success(try await service.consumeCodexResetCredit(account: account)) } catch { result = .failure(error) }
+            resetting.remove(accountID)
+            controller.showResetCreditResult(result, accountID: accountID)
+            if case .success = result { store.credentialsChanged(accountID) }
         }
     }
 
@@ -187,7 +221,7 @@ final class CodexBarLiteApp: NSObject, NSApplicationDelegate, NSPopoverDelegate 
                 if Date() > deadline { timer.invalidate(); return }
                 if let fingerprint = self.authFingerprint(), fingerprint != before {
                     timer.invalidate()
-                    self.store.credentialsChanged(.codex)
+                    self.store.credentialsChanged(IntegrationAccount.current(.codex).id)
                 }
             }
         }

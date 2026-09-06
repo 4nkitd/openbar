@@ -7,7 +7,7 @@ enum UsageDisplayMode: String {
 }
 
 extension Notification.Name {
-    static let codexBarSettingsDidChange = Notification.Name("CodexBarSettingsDidChange")
+    static let openBarSettingsDidChange = Notification.Name("OpenBarSettingsDidChange")
 }
 
 final class SettingsStore {
@@ -23,6 +23,7 @@ final class SettingsStore {
         static let notifyWhenReset = "notifyWhenReset"
         static let launchAtLogin = "launchAtLogin"
         static let didSetLaunchAtLoginDefault = "didSetLaunchAtLoginDefault"
+        static let accounts = "integrationAccounts"
 
         static func integration(_ id: IntegrationID) -> String {
             "integration.\(id.rawValue).enabled"
@@ -32,6 +33,14 @@ final class SettingsStore {
     private let defaults = UserDefaults.standard
 
     private init() {
+        if Bundle.main.bundleIdentifier == AppBranding.bundleIdentifier {
+            let current = defaults.persistentDomain(forName: AppBranding.bundleIdentifier) ?? [:]
+            let legacy = defaults.persistentDomain(forName: AppBranding.legacyBundleIdentifier) ?? [:]
+            if current["didMigrateOpenBarPreferences"] as? Bool != true {
+                let migrated = Self.migratedPreferences(current: current, legacy: legacy)
+                defaults.setPersistentDomain(migrated, forName: AppBranding.bundleIdentifier)
+            }
+        }
         defaults.register(defaults: [
             Key.refreshInterval: 300.0,
             Key.displayMode: UsageDisplayMode.used.rawValue,
@@ -47,6 +56,16 @@ final class SettingsStore {
             Key.integration(.githubCopilot): false,
             Key.integration(.antigravity): false
         ])
+    }
+
+    static func migratedPreferences(current: [String: Any], legacy: [String: Any]) -> [String: Any] {
+        var result = current
+        let keys = [Key.refreshInterval, Key.displayMode, Key.checkForUpdates, Key.notifyAt80, Key.notifyAt90,
+                    Key.notifyWhenExhausted, Key.notifyWhenReset, Key.launchAtLogin, Key.didSetLaunchAtLoginDefault]
+            + IntegrationID.allCases.map(Key.integration)
+        for key in keys where result[key] == nil { result[key] = legacy[key] }
+        result["didMigrateOpenBarPreferences"] = true
+        return result
     }
 
     var refreshInterval: TimeInterval {
@@ -97,6 +116,21 @@ final class SettingsStore {
         IntegrationID.allCases.filter(isIntegrationEnabled)
     }
 
+    var accounts: [IntegrationAccount] {
+        get {
+            guard let data = defaults.data(forKey: Key.accounts) else { return IntegrationID.allCases.map(IntegrationAccount.current) }
+            return (try? JSONDecoder().decode([IntegrationAccount].self, from: data)) ?? []
+        }
+        set {
+            guard let data = try? JSONEncoder().encode(newValue) else { return }
+            set(data, forKey: Key.accounts)
+        }
+    }
+
+    var enabledAccounts: [IntegrationAccount] {
+        accounts.filter { $0.isEnabled && isIntegrationEnabled($0.integration) }
+    }
+
     func isIntegrationEnabled(_ id: IntegrationID) -> Bool {
         defaults.bool(forKey: Key.integration(id))
     }
@@ -135,6 +169,6 @@ final class SettingsStore {
     }
 
     private func notifyChanged() {
-        NotificationCenter.default.post(name: .codexBarSettingsDidChange, object: self)
+        NotificationCenter.default.post(name: .openBarSettingsDidChange, object: self)
     }
 }

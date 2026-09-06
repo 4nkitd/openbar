@@ -1,8 +1,14 @@
 import AppKit
 
 enum AppBranding {
+    static let name = "OpenBar"
+    static let bundleIdentifier = "in.4nkitd.openbar"
+    static let repositoryURL = URL(string: "https://github.com/4nkitd/openbar")!
+    static let issuesURL = repositoryURL.appendingPathComponent("issues")
+    static let legacyBundleIdentifier = "dev.vaibhav.codexbar"
+
     static let logoImage: NSImage? = {
-        guard let url = Bundle.main.url(forResource: "CodexBarLiteLogo", withExtension: "png") else {
+        guard let url = Bundle.main.url(forResource: "OpenBarLogo", withExtension: "png") else {
             return nil
         }
         return NSImage(contentsOf: url)

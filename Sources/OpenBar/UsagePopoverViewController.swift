@@ -3,7 +3,7 @@ import AppKit
 final class UsagePopoverViewController: NSViewController {
     var onRefresh: (() -> Void)?
     var onOpenSettings: (() -> Void)?
-    var onUseResetCredit: (() -> Void)?
+    var onUseResetCredit: ((String) -> Void)?
     private let width: CGFloat = 376
     private let scroll = NSScrollView()
     private let document = FlippedQuotaView()
@@ -23,7 +23,7 @@ final class UsagePopoverViewController: NSViewController {
         background.blendingMode = .withinWindow
         background.state = .active
         view.addSubview(background)
-        let title = quotaLabel("Usage", size: 16, weight: .semibold)
+        let title = quotaLabel(AppBranding.name, size: 16, weight: .semibold)
         let heading = NSStackView(views: [title, subtitle])
         heading.orientation = .vertical
         heading.alignment = .leading
@@ -90,7 +90,7 @@ final class UsagePopoverViewController: NSViewController {
             for (index, id) in enabled.enumerated() where groups[id] == nil {
                 let group = IntegrationGroupView(integration: id)
                 group.onResize = { [weak self] in self?.resizeContent() }
-                group.onReset = { [weak self] in self?.onUseResetCredit?() }
+                group.onReset = { [weak self] id in self?.onUseResetCredit?(id) }
                 groups[id] = group
                 cards.insertArrangedSubview(group, at: min(index, cards.arrangedSubviews.count))
                 group.widthAnchor.constraint(equalTo: cards.widthAnchor).isActive = true
@@ -131,7 +131,7 @@ final class UsagePopoverViewController: NSViewController {
     }
 
     func cancelResetConfirmation() { groups[.codex]?.cancelReset() }
-    func showResetCreditResult(_ result: Result<ConsumeResetCreditsResponse, Error>) { groups[.codex]?.resetResult(result) }
+    func showResetCreditResult(_ result: Result<ConsumeResetCreditsResponse, Error>, accountID: String) { groups[.codex]?.resetResult(result, accountID: accountID) }
     @objc private func refreshClicked() { onRefresh?() }
     @objc private func settingsClicked() { onOpenSettings?() }
 }
@@ -142,7 +142,7 @@ private final class FlippedQuotaView: NSView {
 
 private final class IntegrationGroupView: NSView {
     var onResize: (() -> Void)?
-    var onReset: (() -> Void)?
+    var onReset: ((String) -> Void)?
     private let integration: IntegrationID
     private let stack = NSStackView()
     private let accounts = NSStackView()
@@ -224,7 +224,7 @@ private final class IntegrationGroupView: NSView {
             }
             for (index, provider) in state.providers.enumerated() where rows[provider.id] == nil {
                 let row = AccountQuotaView()
-                row.onReset = { [weak self] in self?.onReset?() }
+                row.onReset = { [weak self] in self?.onReset?(provider.configurationID ?? IntegrationAccount.current(.codex).id) }
                 rows[provider.id] = row
                 accounts.insertArrangedSubview(row, at: min(index, accounts.arrangedSubviews.count))
                 row.widthAnchor.constraint(equalTo: accounts.widthAnchor).isActive = true
@@ -232,7 +232,10 @@ private final class IntegrationGroupView: NSView {
             ids = next
         }
         for provider in state.providers {
-            rows[provider.id]?.update(provider, mode: mode, expanded: expanded, canReset: state.message == nil && !state.isRefreshing)
+            let status = provider.configurationID.flatMap { state.accountStatuses[$0] }
+            rows[provider.id]?.update(provider, mode: mode, expanded: expanded,
+                                     canReset: (status.map { $0.message == nil && !$0.isRefreshing } ?? (state.message == nil && !state.isRefreshing)),
+                                     status: status)
         }
         status.stringValue = state.isRefreshing ? "Updating…" : state.message != nil ? (state.providers.isEmpty ? "Unavailable" : "Check connection") : state.providers.count > 1 ? "\(state.providers.count) accounts" : state.providers.first?.plan ?? "Not checked"
         status.textColor = state.message == nil ? .secondaryLabelColor : .systemOrange
@@ -240,12 +243,11 @@ private final class IntegrationGroupView: NSView {
         accounts.isHidden = state.providers.isEmpty
         warning.isHidden = state.message == nil && !state.providers.isEmpty && !expanded
         if let message = state.message {
-            let age = state.updatedAt.map { "Last success \(QuotaText.age($0)). " } ?? ""
-            warning.stringValue = age + message + (state.retryAt.map { " Retry \(QuotaText.reset($0))." } ?? "")
+            warning.stringValue = message
         } else if state.providers.isEmpty {
             warning.stringValue = state.isRefreshing ? "Reading quota from the provider…" : integration.setupHint
         } else {
-            warning.stringValue = (state.providers.first?.sourceLabel ?? "") + (state.updatedAt.map { "\nUpdated \(QuotaText.age($0))" } ?? "")
+            warning.stringValue = state.providers.first?.sourceLabel ?? ""
         }
     }
 
@@ -258,12 +260,15 @@ private final class IntegrationGroupView: NSView {
     }
 
     func cancelReset() { rows.values.forEach { $0.cancelReset() } }
-    func resetResult(_ result: Result<ConsumeResetCreditsResponse, Error>) { rows.values.forEach { $0.resetResult(result) } }
+    func resetResult(_ result: Result<ConsumeResetCreditsResponse, Error>, accountID: String) {
+        for provider in state.providers where provider.configurationID == accountID { rows[provider.id]?.resetResult(result) }
+    }
 }
 
 private final class AccountQuotaView: NSStackView {
     var onReset: (() -> Void)?
     private let account = quotaLabel("", size: 11, weight: .medium)
+    private let statusLabel = quotaLabel("", size: 10.5, secondary: true)
     private let summary = LimitQuotaView()
     private let details = NSStackView()
     private let resetButton = NSButton(title: "Use reset credit", target: nil, action: nil)
@@ -290,15 +295,19 @@ private final class AccountQuotaView: NSStackView {
             child.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
         }
         addArrangedSubview(resetButton)
+        addArrangedSubview(statusLabel)
     }
 
     required init?(coder: NSCoder) { nil }
 
-    func update(_ provider: ProviderUsage, mode: UsageDisplayMode, expanded: Bool, canReset: Bool) {
+    func update(_ provider: ProviderUsage, mode: UsageDisplayMode, expanded: Bool, canReset: Bool, status: AccountStatus?) {
         account.stringValue = provider.accountLabel ?? ""
         account.toolTip = provider.accountLabel
         account.lineBreakMode = .byTruncatingMiddle
         account.isHidden = provider.accountLabel == nil
+        statusLabel.isHidden = status?.message == nil && status?.isRefreshing != true
+        statusLabel.stringValue = status?.isRefreshing == true ? "Refreshing…" : "Cached"
+        statusLabel.toolTip = status?.message
         summary.update(provider.limitingWindow, mode: mode)
         details.isHidden = !expanded
         if expanded {
@@ -411,11 +420,4 @@ private enum QuotaText {
         return "in \(seconds / 86400)d \((seconds % 86400) / 3600)h"
     }
 
-    static func age(_ date: Date) -> String {
-        let seconds = max(0, Int(-date.timeIntervalSinceNow))
-        if seconds < 60 { return "just now" }
-        if seconds < 3600 { return "\(seconds / 60)m ago" }
-        if seconds < 86400 { return "\(seconds / 3600)h ago" }
-        return "\(seconds / 86400)d ago"
-    }
 }

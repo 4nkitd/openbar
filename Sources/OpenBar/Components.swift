@@ -299,7 +299,7 @@ enum StatusIconState: Equatable {
 }
 
 /// Composes the menu bar status item image: a thin circular progress ring
-/// with the CodexBar Lite logo inscribed inside. Rendered once per refresh
+/// with the OpenBar logo inscribed inside. Rendered once per refresh
 /// (no continuous animation). Light/dark-aware via NSColor.quaternaryLabelColor
 /// for the ring track. Bitmap is generated at @2x for crisp Retina rendering;
 /// the NSImage reports its logical point size so AppKit places it correctly.

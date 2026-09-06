@@ -67,6 +67,7 @@ struct ProviderUsage: Codable, Identifiable {
     let sourceLabel: String
     let limits: [ProviderLimit]
     let resetCredits: ResetCredits?
+    var configurationID: String? = nil
 
     var primary: ProviderLimit { limits[0] }
 
@@ -137,30 +138,31 @@ enum IntegrationError: LocalizedError {
 }
 
 enum CredentialStore {
+    // Retain the legacy service so existing saved tokens survive the app rename.
     private static let service = "dev.vaibhav.codexbar.integrations"
+    static let googleOAuthService = "in.4nkitd.openbar.oauth"
 
-    static func configuredToken(for integration: IntegrationID) -> String? {
-        readKeychain(service: service, account: integration.rawValue)
+    static func configuredToken(for account: IntegrationAccount) -> String? {
+        readKeychain(service: service, account: account.tokenKey)
     }
 
-    static func saveConfiguredToken(_ token: String, for integration: IntegrationID) throws {
+    static func saveConfiguredToken(_ token: String, for account: IntegrationAccount) throws {
         let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        try writeKeychain(trimmed, service: service, account: integration.rawValue)
+        try writeKeychain(trimmed, service: service, account: account.tokenKey)
     }
 
-    static func clearConfiguredToken(for integration: IntegrationID) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: integration.rawValue
-        ]
-        let result = SecItemDelete(query as CFDictionary)
-        guard result == errSecSuccess || result == errSecItemNotFound else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(result)) }
+    static func clearConfiguredToken(for account: IntegrationAccount) throws {
+        for key in account.ownedKeychainKeys {
+            let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                       kSecAttrService as String: service, kSecAttrAccount as String: key]
+            let result = SecItemDelete(query as CFDictionary)
+            guard result == errSecSuccess || result == errSecItemNotFound else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(result)) }
+        }
     }
 
     static func openCodeGoToken() -> String? {
-        if let configured = configuredToken(for: .openCodeGo) { return configured }
+        if let configured = configuredToken(for: .current(.openCodeGo)) { return configured }
         let paths = [
             home(".local/share/opencode/auth.json"),
             home("Library/Application Support/opencode/auth.json")
@@ -175,13 +177,18 @@ enum CredentialStore {
         return nil
     }
 
-    static func claudeCredentials() -> OAuthCredentials? {
+    static func claudeCredentials(for account: IntegrationAccount) -> OAuthCredentials? {
+        if account.source == .file {
+            guard let url = account.credentialURL, let raw = try? String(contentsOf: url, encoding: .utf8),
+                  let credentials = parseClaudeCredentials(raw) else { return nil }
+            return cachedClaudeCredentials(for: credentials, key: account.claudeCacheKey)
+        }
         if let raw = readKeychain(service: "Claude Code-credentials", account: NSUserName()),
            let credentials = parseClaudeCredentials(raw) {
-            return cachedClaudeCredentials(for: credentials)
+            return cachedClaudeCredentials(for: credentials, key: account.claudeCacheKey)
         }
         if let raw = try? String(contentsOf: home(".claude/.credentials.json"), encoding: .utf8), let credentials = parseClaudeCredentials(raw) {
-            return cachedClaudeCredentials(for: credentials)
+            return cachedClaudeCredentials(for: credentials, key: account.claudeCacheKey)
         }
         let paths = [
             home(".local/share/opencode/auth.json"),
@@ -195,13 +202,13 @@ enum CredentialStore {
                 refreshToken: entry["refresh"] as? String ?? "",
                 expiresAtMillis: number(entry["expires"])?.int64Value ?? 0
             )
-            if !credentials.accessToken.isEmpty || !credentials.refreshToken.isEmpty { return cachedClaudeCredentials(for: credentials) }
+            if !credentials.accessToken.isEmpty || !credentials.refreshToken.isEmpty { return cachedClaudeCredentials(for: credentials, key: account.claudeCacheKey) }
         }
         return nil
     }
 
-    private static func cachedClaudeCredentials(for source: OAuthCredentials) -> OAuthCredentials {
-        guard let raw = readKeychain(service: service, account: "claude-oauth-cache"),
+    private static func cachedClaudeCredentials(for source: OAuthCredentials, key: String) -> OAuthCredentials {
+        guard let raw = readKeychain(service: service, account: key),
               let data = raw.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               object["sourceFingerprint"] as? String == fingerprint(source.accessToken),
@@ -210,7 +217,7 @@ enum CredentialStore {
         return cached
     }
 
-    static func cacheClaudeCredentials(_ credentials: OAuthCredentials) {
+    static func cacheClaudeCredentials(_ credentials: OAuthCredentials, key: String) {
         let value: [String: Any] = [
             "sourceFingerprint": credentials.sourceFingerprint,
             "claudeAiOauth": [
@@ -221,10 +228,14 @@ enum CredentialStore {
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: value),
               let raw = String(data: data, encoding: .utf8) else { return }
-        try? writeKeychain(raw, service: service, account: "claude-oauth-cache")
+        try? writeKeychain(raw, service: service, account: key)
     }
 
-    static func antigravityAccounts() -> [GoogleCredentials] {
+    static func antigravityAccounts(for account: IntegrationAccount) -> [GoogleCredentials] {
+        if account.source == .file {
+            guard let url = account.credentialURL, let value = jsonObject(at: url) else { return [] }
+            return parseGoogleAccounts(value)
+        }
         var accounts: [GoogleCredentials] = []
         var seen = Set<String>()
         if let raw = readKeychain(service: "gemini", account: "antigravity"),
@@ -258,15 +269,47 @@ enum CredentialStore {
         return accounts
     }
 
+    static func parseGoogleAccounts(_ value: [String: Any]) -> [GoogleCredentials] {
+        let values = value["accounts"] as? [[String: Any]] ?? [value]
+        var seen = Set<String>()
+        return values.compactMap { item in
+            let token = item["token"] as? [String: Any] ?? item
+            let refresh = token["refresh_token"] as? String ?? token["refreshToken"] as? String ?? ""
+            let access = token["access_token"] as? String ?? token["accessToken"] as? String
+            guard !refresh.isEmpty || access?.isEmpty == false, seen.insert(refresh.isEmpty ? access! : refresh).inserted else { return nil }
+            return GoogleCredentials(label: item["email"] as? String ?? "Account \(fingerprint(refresh.isEmpty ? access! : refresh).prefix(6))", refreshToken: refresh, accessToken: access)
+        }
+    }
+
+    static func googleOAuthClients() -> [GoogleOAuthClient] {
+        ["antigravity", "gemini"].compactMap { account in
+            guard let value = readKeychain(service: googleOAuthService, account: "client.\(account)"), let data = value.data(using: .utf8) else { return nil }
+            return try? JSONDecoder().decode(GoogleOAuthClient.self, from: data)
+        }
+    }
+
+    static func saveGoogleOAuthClient(_ client: GoogleOAuthClient, kind: String) throws {
+        guard ["antigravity", "gemini"].contains(kind), !client.clientID.isEmpty, !client.clientSecret.isEmpty else {
+            throw IntegrationError.notConfigured("Both OAuth client ID and client secret are required.")
+        }
+        let raw = String(decoding: try JSONEncoder().encode(client), as: UTF8.self)
+        try writeKeychain(raw, service: googleOAuthService, account: "client.\(kind)")
+    }
+
+    static func importGoogleOAuthClients(environment: [String: String]) throws -> Int {
+        let clients = try GoogleOAuthClient.fromEnvironment(environment)
+        for (kind, client) in clients { try saveGoogleOAuthClient(client, kind: kind) }
+        return clients.count
+    }
+
     static func codexAuthURL() -> URL { home(".codex/auth.json") }
 
-    static func readCodexAuth() throws -> CodexAuth {
-        let data = try Data(contentsOf: codexAuthURL())
+    static func readCodexAuth(at url: URL) throws -> CodexAuth {
+        let data = try Data(contentsOf: url)
         return try JSONDecoder().decode(CodexAuth.self, from: data)
     }
 
-    static func saveCodexAuth(_ auth: CodexAuth) throws {
-        let url = codexAuthURL()
+    static func saveCodexAuth(_ auth: CodexAuth, at url: URL) throws {
         let data = try updatedCodexAuth(Data(contentsOf: url), auth: auth)
         try writePrivateData(data, to: url)
     }
@@ -297,11 +340,11 @@ enum CredentialStore {
     private static func parseClaudeCredentials(_ raw: String) -> OAuthCredentials? {
         guard let data = raw.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        let value = root["claudeAiOauth"] as? [String: Any] ?? root
+        let value = root["claudeAiOauth"] as? [String: Any] ?? root["anthropic"] as? [String: Any] ?? root
         let credentials = OAuthCredentials(
-            accessToken: value["accessToken"] as? String ?? "",
-            refreshToken: value["refreshToken"] as? String ?? "",
-            expiresAtMillis: number(value["expiresAt"])?.int64Value ?? 0
+            accessToken: value["accessToken"] as? String ?? value["access"] as? String ?? "",
+            refreshToken: value["refreshToken"] as? String ?? value["refresh"] as? String ?? "",
+            expiresAtMillis: number(value["expiresAt"] ?? value["expires"])?.int64Value ?? 0
         )
         return credentials.accessToken.isEmpty && credentials.refreshToken.isEmpty ? nil : credentials
     }
@@ -328,7 +371,11 @@ enum CredentialStore {
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
         var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status != errSecSuccess && status != errSecItemNotFound && ProcessInfo.processInfo.arguments.contains("--diagnostics") {
+            FileHandle.standardError.write(Data("Keychain read failed (OSStatus \(status)).\n".utf8))
+        }
+        guard status == errSecSuccess,
               let data = result as? Data,
               let value = String(data: data, encoding: .utf8),
               !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
@@ -368,6 +415,25 @@ struct GoogleCredentials {
     let accessToken: String?
 }
 
+struct GoogleOAuthClient: Codable {
+    let clientID: String
+    let clientSecret: String
+
+    static func fromEnvironment(_ environment: [String: String]) throws -> [(String, GoogleOAuthClient)] {
+        var clients: [(String, GoogleOAuthClient)] = []
+        for kind in ["antigravity", "gemini"] {
+            let prefix = kind.uppercased()
+            let id = environment["\(prefix)_OAUTH_CLIENT_ID"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let secret = environment["\(prefix)_OAUTH_CLIENT_SECRET"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if id.isEmpty && secret.isEmpty { continue }
+            guard !id.isEmpty && !secret.isEmpty else { throw IntegrationError.notConfigured("Provide both \(prefix) OAuth client values.") }
+            clients.append((kind, GoogleOAuthClient(clientID: id, clientSecret: secret)))
+        }
+        guard !clients.isEmpty else { throw IntegrationError.notConfigured("No Google OAuth client credentials were supplied for local setup.") }
+        return clients
+    }
+}
+
 private final class NoCredentialRedirects: NSObject, URLSessionTaskDelegate {
     // Do not replay OAuth form bodies or credentials to a redirected destination.
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
@@ -387,18 +453,33 @@ actor IntegrationService {
         session = URLSession(configuration: configuration, delegate: NoCredentialRedirects(), delegateQueue: nil)
     }
 
-    func fetch(_ integration: IntegrationID) async throws -> [ProviderUsage] {
-        switch integration {
-        case .codex: return [try await fetchCodex()]
-        case .claude: return [try await fetchClaude()]
-        case .openCodeGo: return [try await fetchOpenCodeGo()]
-        case .githubCopilot: return [try await fetchGitHubCopilot()]
-        case .antigravity: return try await fetchAntigravity()
+    func fetch(_ account: IntegrationAccount) async throws -> [ProviderUsage] {
+        guard account.source != .file || account.credentialURL != nil else { throw IntegrationError.notConfigured("Select a credential file for this account.") }
+        do {
+            let providers: [ProviderUsage]
+            switch account.integration {
+            case .codex: providers = [try await fetchCodex(authURL: account.credentialURL ?? CredentialStore.codexAuthURL())]
+            case .claude: providers = [try await fetchClaude(account: account)]
+            case .openCodeGo: providers = [try await fetchOpenCodeGo(account: account)]
+            case .githubCopilot: providers = [try await fetchGitHubCopilot(account: account)]
+            case .antigravity: providers = try await fetchAntigravity(account: account)
+            }
+            return providers.map { attachAccount(account, to: $0) }
+        } catch IntegrationError.partial(let providers, let message) {
+            throw IntegrationError.partial(providers.map { attachAccount(account, to: $0) }, message)
         }
     }
 
-    func consumeCodexResetCredit() async throws -> ConsumeResetCreditsResponse {
-        let tokens = try await validCodexTokens()
+    private func attachAccount(_ account: IntegrationAccount, to usage: ProviderUsage) -> ProviderUsage {
+        ProviderUsage(id: account.id + ":" + usage.id, integration: usage.integration, name: usage.name,
+                      accountLabel: account.label + (usage.accountLabel.map { " · \($0)" } ?? ""),
+                      plan: usage.plan, sourceLabel: usage.sourceLabel, limits: usage.limits,
+                      resetCredits: usage.resetCredits, configurationID: account.id)
+    }
+
+    func consumeCodexResetCredit(account: IntegrationAccount) async throws -> ConsumeResetCreditsResponse {
+        guard account.integration == .codex else { throw IntegrationError.invalidResponse("Reset credits are only supported for Codex.") }
+        let tokens = try await validCodexTokens(authURL: account.credentialURL ?? CredentialStore.codexAuthURL())
         var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume")!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(tokens.accessToken ?? "")", forHTTPHeaderField: "Authorization")
@@ -412,8 +493,8 @@ actor IntegrationService {
         return try JSONDecoder().decode(ConsumeResetCreditsResponse.self, from: data)
     }
 
-    private func fetchCodex() async throws -> ProviderUsage {
-        var tokens = try await validCodexTokens()
+    private func fetchCodex(authURL: URL) async throws -> ProviderUsage {
+        var tokens = try await validCodexTokens(authURL: authURL)
         let urls = [
             URL(string: "https://chatgpt.com/backend-api/wham/usage")!,
             URL(string: "https://chatgpt.com/backend-api/codex/usage")!
@@ -428,7 +509,7 @@ actor IntegrationService {
             do {
                 var (data, response) = try await session.data(for: request)
                 if (response as? HTTPURLResponse)?.statusCode == 401 {
-                    tokens = try await validCodexTokens(forceRefresh: true)
+                    tokens = try await validCodexTokens(authURL: authURL, forceRefresh: true)
                     request.setValue("Bearer \(tokens.accessToken ?? "")", forHTTPHeaderField: "Authorization")
                     (data, response) = try await session.data(for: request)
                 }
@@ -440,10 +521,10 @@ actor IntegrationService {
         throw IntegrationError.invalidResponse("Codex usage API is unavailable.")
     }
 
-    private func validCodexTokens(forceRefresh: Bool = false) async throws -> CodexAuth.Tokens {
+    private func validCodexTokens(authURL: URL, forceRefresh: Bool = false) async throws -> CodexAuth.Tokens {
         var auth: CodexAuth
         do {
-            auth = try CredentialStore.readCodexAuth()
+            auth = try CredentialStore.readCodexAuth(at: authURL)
         } catch {
             throw IntegrationError.notConfigured("Codex is not signed in.")
         }
@@ -471,7 +552,8 @@ actor IntegrationService {
             tokens.idToken = value["id_token"] as? String ?? tokens.idToken
             auth.tokens = tokens
             auth.lastRefresh = ISO8601DateFormatter().string(from: Date())
-            try CredentialStore.saveCodexAuth(auth)
+            try Task.checkCancellation()
+            try CredentialStore.saveCodexAuth(auth, at: authURL)
         }
         return tokens
     }
@@ -522,12 +604,12 @@ actor IntegrationService {
         }
     }
 
-    private func fetchClaude() async throws -> ProviderUsage {
-        guard var credentials = CredentialStore.claudeCredentials() else {
+    private func fetchClaude(account: IntegrationAccount) async throws -> ProviderUsage {
+        guard var credentials = CredentialStore.claudeCredentials(for: account) else {
             throw IntegrationError.notConfigured("Claude Code OAuth credentials were not found.")
         }
         if credentials.accessToken.isEmpty || (credentials.expiresAtMillis > 0 && Date(timeIntervalSince1970: Double(credentials.expiresAtMillis) / 1000).timeIntervalSinceNow < 60) {
-            credentials = try await refreshClaude(credentials)
+            credentials = try await refreshClaude(credentials, cacheKey: account.claudeCacheKey)
         }
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
         request.setValue("Bearer \(credentials.accessToken)", forHTTPHeaderField: "Authorization")
@@ -536,7 +618,7 @@ actor IntegrationService {
         request.setValue("claude-cli/2.1.112 (external, sdk-cli)", forHTTPHeaderField: "User-Agent")
         var (data, response) = try await session.data(for: request)
         if (response as? HTTPURLResponse)?.statusCode == 401 {
-            credentials = try await refreshClaude(credentials)
+            credentials = try await refreshClaude(credentials, cacheKey: account.claudeCacheKey)
             request.setValue("Bearer \(credentials.accessToken)", forHTTPHeaderField: "Authorization")
             (data, response) = try await session.data(for: request)
         }
@@ -569,7 +651,7 @@ actor IntegrationService {
         )
     }
 
-    private func refreshClaude(_ credentials: OAuthCredentials) async throws -> OAuthCredentials {
+    private func refreshClaude(_ credentials: OAuthCredentials, cacheKey: String) async throws -> OAuthCredentials {
         guard !credentials.refreshToken.isEmpty else { throw IntegrationError.notConfigured("Claude OAuth credentials expired.") }
         var request = URLRequest(url: URL(string: "https://claude.ai/v1/oauth/token")!)
         request.httpMethod = "POST"
@@ -592,12 +674,14 @@ actor IntegrationService {
             expiresAtMillis: Int64(Date().timeIntervalSince1970 * 1000) + (number(value["expires_in"])?.int64Value ?? 28_800) * 1000,
             sourceFingerprint: credentials.sourceFingerprint.isEmpty ? fingerprint(credentials.accessToken) : credentials.sourceFingerprint
         )
-        CredentialStore.cacheClaudeCredentials(refreshed)
+        try Task.checkCancellation()
+        CredentialStore.cacheClaudeCredentials(refreshed, key: cacheKey)
         return refreshed
     }
 
-    private func fetchOpenCodeGo() async throws -> ProviderUsage {
-        guard let token = CredentialStore.openCodeGoToken() else {
+    private func fetchOpenCodeGo(account: IntegrationAccount) async throws -> ProviderUsage {
+        let saved = account.source == .automatic ? CredentialStore.openCodeGoToken() : CredentialStore.configuredToken(for: account)
+        guard let token = saved else {
             throw IntegrationError.notConfigured("OpenCode Go API key is not configured.")
         }
         let urls = [
@@ -654,8 +738,8 @@ actor IntegrationService {
         )
     }
 
-    private func fetchGitHubCopilot() async throws -> ProviderUsage {
-        guard let token = CredentialStore.configuredToken(for: .githubCopilot) else {
+    private func fetchGitHubCopilot(account: IntegrationAccount) async throws -> ProviderUsage {
+        guard let token = CredentialStore.configuredToken(for: account) else {
             throw IntegrationError.notConfigured("GitHub token is not configured.")
         }
         var request = URLRequest(url: URL(string: "https://api.github.com/copilot_internal/user")!)
@@ -695,8 +779,8 @@ actor IntegrationService {
         )
     }
 
-    private func fetchAntigravity() async throws -> [ProviderUsage] {
-        let accounts = CredentialStore.antigravityAccounts()
+    private func fetchAntigravity(account: IntegrationAccount) async throws -> [ProviderUsage] {
+        let accounts = CredentialStore.antigravityAccounts(for: account)
         guard !accounts.isEmpty else { throw IntegrationError.notConfigured("Antigravity OAuth credentials were not found.") }
         var providers: [ProviderUsage] = []
         var errors: [String] = []
@@ -741,9 +825,9 @@ actor IntegrationService {
             guard let id = environment["\(prefix)_OAUTH_CLIENT_ID"], !id.isEmpty,
                   let secret = environment["\(prefix)_OAUTH_CLIENT_SECRET"], !secret.isEmpty else { return nil }
             return (id, secret)
-        }
+        } + CredentialStore.googleOAuthClients().map { ($0.clientID, $0.clientSecret) }
         guard !clients.isEmpty else {
-            throw IntegrationError.notConfigured("Google OAuth refresh needs ANTIGRAVITY_OAUTH_CLIENT_ID and ANTIGRAVITY_OAUTH_CLIENT_SECRET in the app environment, or the corresponding GEMINI variables. No client secret is bundled.")
+            throw IntegrationError.notConfigured("OAuth setup required. Open Integrations → Antigravity → Configure OAuth.")
         }
         for (clientID, clientSecret) in clients {
             try Task.checkCancellation()
