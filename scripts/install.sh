@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="CodexBarLite"
-BUNDLE_ID="dev.vaibhav.codexbar"
-APP_VERSION="${APP_VERSION:-0.2.0}"
-BUILD_NUMBER="${BUILD_NUMBER:-2}"
+APP_NAME="OpenBar"
+BUNDLE_ID="in.4nkitd.openbar"
+APP_VERSION="${APP_VERSION:-0.1.0}"
+BUILD_NUMBER="${BUILD_NUMBER:-1}"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,8 +26,8 @@ mkdir -p "$MACOS_DIR" "$FRAMEWORKS_DIR" "$RESOURCES_DIR"
 
 cp "$BUILD_DIR/$APP_NAME" "$MACOS_DIR/$APP_NAME"
 ditto "$BUILD_DIR/Sparkle.framework" "$FRAMEWORKS_DIR/Sparkle.framework"
-cp "$ROOT_DIR/assets/CodexBarLite.icns" "$RESOURCES_DIR/CodexBarLite.icns"
-cp "$ROOT_DIR/assets/codexbar-lite-blue-dot.png" "$RESOURCES_DIR/CodexBarLiteLogo.png"
+cp "$ROOT_DIR/assets/CodexBarLite.icns" "$RESOURCES_DIR/OpenBar.icns"
+cp "$ROOT_DIR/assets/codexbar-lite-blue-dot.png" "$RESOURCES_DIR/OpenBarLogo.png"
 cp "$ROOT_DIR/assets/providers/claude.svg" "$RESOURCES_DIR/ProviderClaude.svg"
 cp "$ROOT_DIR/assets/providers/opencode.svg" "$RESOURCES_DIR/ProviderOpenCode.svg"
 cp "$ROOT_DIR/assets/providers/codex.pdf" "$RESOURCES_DIR/ProviderCodex.pdf"
@@ -53,7 +53,7 @@ cat > "$PLIST" <<EOF
     <string>$APP_NAME</string>
 
     <key>CFBundleIconFile</key>
-    <string>CodexBarLite.icns</string>
+    <string>OpenBar.icns</string>
 
     <key>CFBundlePackageType</key>
     <string>APPL</string>
@@ -70,23 +70,19 @@ cat > "$PLIST" <<EOF
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
 
-    <key>SUFeedURL</key>
-    <string>https://raw.githubusercontent.com/wei-b0/codexbar-lite/main/appcast.xml</string>
-
-    <key>SUPublicEDKey</key>
-    <string>5P/mSrMBoCrNBUDzydgV0TWAkf541A2MIw9FtAFC7BI=</string>
-
-    <key>SUEnableAutomaticChecks</key>
-    <true/>
-
-    <key>SUAutomaticallyUpdate</key>
-    <true/>
-
-    <key>SUVerifyUpdateBeforeExtraction</key>
-    <true/>
   </dict>
 </plist>
 EOF
+
+if [[ -n "${SPARKLE_FEED_URL:-}" || -n "${SPARKLE_PUBLIC_KEY:-}" ]]; then
+  : "${SPARKLE_FEED_URL:?Set an OpenBar update feed URL}"
+  : "${SPARKLE_PUBLIC_KEY:?Set the matching OpenBar public signing key}"
+  [[ "$SPARKLE_FEED_URL" == https://* ]] || { echo "The update feed must use HTTPS" >&2; exit 1; }
+  plutil -insert SUFeedURL -string "$SPARKLE_FEED_URL" "$PLIST"
+  plutil -insert SUPublicEDKey -string "$SPARKLE_PUBLIC_KEY" "$PLIST"
+  plutil -insert SUEnableAutomaticChecks -bool YES "$PLIST"
+  plutil -insert SUVerifyUpdateBeforeExtraction -bool YES "$PLIST"
+fi
 
 chmod +x "$MACOS_DIR/$APP_NAME"
 
@@ -114,4 +110,4 @@ rm -f "$LAUNCH_AGENT"
 echo "Launching app..."
 open "/Applications/$APP_NAME.app"
 
-echo "Done. CodexBarLite should now appear in your top bar."
+echo "Done. OpenBar should now appear in your top bar."

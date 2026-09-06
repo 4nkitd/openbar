@@ -3,14 +3,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "CodexBarLite",
+    name: "OpenBar",
     platforms: [
         .macOS(.v13)
     ],
     products: [
         .executable(
-            name: "CodexBarLite",
-            targets: ["CodexBarLite"]
+            name: "OpenBar",
+            targets: ["OpenBar"]
         )
     ],
     dependencies: [
@@ -18,7 +18,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "CodexBarLite",
+            name: "OpenBar",
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle")
             ],
