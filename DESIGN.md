@@ -133,13 +133,13 @@ components:
 
 The landing page is built from the logo outward: a near-black ground identical in character to the icon's own background, with the icon's single blue circle expanded from a 1024×1024 dot into the surface's real structural color — button fills, active states, badges, headline emphasis, checkmarks. The craft bar is a named reference the user pinned, [kraten.github.io/chimlo](https://kraten.github.io/chimlo): a dark, confident developer-tool launch page with a bold display headline, an interactive product hero, a feature grid, a trust/privacy section, an FAQ accordion, and a closing CTA. This system executes that structure at full fidelity, populated with CodexBar Lite's own product truth and its own screenshots — never Chimlo's copy, iconography, or exact green accent.
 
-Where the page touches the product's actual UI (the ring status icon, usage popover, and tabbed Settings window), it stays native: real macOS chrome — vibrancy-style translucent panels, continuous corner radii, SF system type — rather than an illustrated interpretation. Everywhere else, the page allows itself the display headline's confidence and the accent's real structural weight, which is what separates a launch page from a settings pane.
+Where the page touches the product's actual UI (the ring status icon, multi-provider usage popover, and tabbed Settings window), it stays native: real macOS chrome, compact provider cards, linear quota bars, continuous corner radii, and SF system type rather than an illustrated interpretation.
 
 **Key Characteristics:**
 - Near-black ground (`#121212`) matching the logo icon's own background, not a generic dark-SaaS near-black chosen by category.
 - Logo blue (`#1475fc`) at Committed intensity: button fills, badge fills, active/progress states, one emphasized headline word — not restrained to link text.
 - Bold, expressive display face (Bricolage Grotesque) for headlines; native system font (SF Pro / system-ui) for everything meant to read as the OS's own voice.
-- A faithful interactive product recreation in the hero and real product captures everywhere else, never generic dashboard mockups.
+- A faithful interactive product recreation in the hero with one linear quota card per enabled provider, never a generic dashboard mockup.
 - Rounded, pill-shaped interactive elements (buttons, badges) against otherwise rectilinear panels with soft continuous corners (14-20px) — matching real macOS card language, not the previous world's flat/sharp-cornered document language.
 
 ## Colors
@@ -231,7 +231,7 @@ Pill-radius (999px) on every interactive control — buttons, badges, nav pills.
 - **Internal Padding:** 24-32px.
 
 ### Live Usage Demo (signature component)
-- The hero is a real HTML/CSS recreation of the blue ring-and-percentage menu bar item and card-based usage popover. The primary ring animates to 63%; refreshing advances the mock data to exhaustion, enables the reset-credit action, and allows the native two-click confirmation flow. The overflow menu opens Settings and update-check actions. All motion resolves immediately under `prefers-reduced-motion`.
+- The hero recreates the menu-bar summary and the multi-provider popover. Each enabled provider has its own compact card with branded identity, quota percentage, reset detail, and linear progress bars. The large circular popover meter is retired; the small menu-bar ring remains the most-constrained-provider summary.
 - The Settings overlay recreates the current General, Authentication, Notifications, and About toolbar panes. Canonical captures in `docs/assets/screenshots/` use the same structure and controlled sample values as the live demo.
 
 ### Checklist (privacy section)

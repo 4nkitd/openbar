@@ -9,7 +9,8 @@ Two surfaces in one repo:
 
 ## Commands
 
-- `swift build` — the only verification that exists. There are no tests and no test target.
+- `swift build -Xswiftc -warnings-as-errors` — compile the app.
+- `bash scripts/check.sh` — offline regression checks and native AppKit screenshots using `swiftc`; works with Command Line Tools without XCTest. Output goes to a temporary directory, or `CHECK_OUTPUT_DIR`.
 - `BUILD_ONLY=1 ./scripts/install.sh` — release build + assemble `dist/CodexBarLite.app` (ad-hoc codesign) without touching the system.
 - `./scripts/install.sh` — same, then **replaces `/Applications/CodexBarLite.app` and launches it** (kills any running instance). Env overrides: `APP_VERSION`, `BUILD_NUMBER`, `CODESIGN_IDENTITY` (default `-` = ad-hoc).
 - `./scripts/release.sh <version> <build-number>` — Sparkle release: builds the update zip and regenerates root `appcast.xml`. Requires the Sparkle EdDSA private key in the login keychain or the appcast step fails.
@@ -18,8 +19,8 @@ Two surfaces in one repo:
 
 ## App notes
 
-- `main.swift` holds the app delegate, auth reading, networking, action menu, and cache. UI is split across `UsagePopoverViewController.swift`, `SettingsWindowController.swift`, and `Components.swift`; supporting helpers include `Settings.swift`, `NotificationManager.swift`, and `Branding.swift`.
-- Usage comes from the unofficial endpoint `https://chatgpt.com/backend-api/codex/usage` while impersonating the Codex CLI (`User-Agent: codex-cli/0.11.0`, `originator: codex_cli_rs`, `chatgpt-account-id` header). It can break when OpenAI changes it. A Cloudflare HTML challenge falls back to the cache at `~/Library/Application Support/CodexBarLite/usage.json`.
+- `App.swift` holds the app delegate; `Integrations.swift` owns credentials and HTTP adapters; `QuotaStore.swift` owns per-provider polling, cooldowns, cancellation and the `quotas-v2.json` cache. UI is split across `UsagePopoverViewController.swift`, `SettingsWindowController.swift`, and `Components.swift`.
+- Codex usage comes from unofficial `https://chatgpt.com/backend-api/wham/usage`, with `/codex/usage` on HTTP 404. Other provider endpoints are listed in README. Each provider keeps timestamped readings in `~/Library/Application Support/CodexBarLite/quotas-v2.json`; stale data never triggers notifications. Some endpoints can change without notice.
 - Sparkle updates and the launch-at-login default are deliberately gated on running from a real `.app` bundle with `SUFeedURL`/`SUPublicEDKey`. Running the bare binary (`swift run`, `.build/...`) skips both — do not remove those guards.
 - Debugging the happy path requires a real Codex CLI session (`codex login` → `~/.codex/auth.json`) and hits the live endpoint. UserDefaults domain: `dev.vaibhav.codexbar`.
 
@@ -33,5 +34,5 @@ Two surfaces in one repo:
 ## Landing page rules (docs/)
 
 - Static HTML/CSS/JS only — no build step, no framework (per `.impeccable/surfaces/docs-index-html.md`). The one allowed JS is small vanilla animation respecting `prefers-reduced-motion`.
-- Copy rules from `PRODUCT.md`: the "no Keychain / no cookies / no API key / no third-party account" claims are the product's core credibility — keep them precise and verifiable; never fabricate testimonials, press, or stats; never imply OpenAI affiliation.
+- The published site still describes v0.2.5, not the unreleased multi-provider build. Before releasing that build, update the site's access claims and screenshots: integrations now use Keychain and optional tokens. Keep the no-browser-cookies/no-third-party-backend claims precise; never fabricate testimonials, press, or stats or imply provider affiliation.
 - The page is maintained with the `impeccable` skill vendored at `docs/.agents/skills/impeccable`; surface state lives in `.impeccable/surfaces/`.
