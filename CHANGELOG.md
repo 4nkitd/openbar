@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1
+## 0.1.3
 
 - Brand-colored progress bars for each integration app (Codex Teal, Claude Coral, OpenCode Purple, Copilot Blue, Antigravity Blue).
 - Fully rebranded landing page and docs website for OpenBar (`https://4nkitd.github.io/openbar/`).
