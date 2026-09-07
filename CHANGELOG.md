@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.1.4
 
 - xAI Grok SuperGrok quota via existing OpenCode xAI OAuth or `grok login` credential files. Read-only HTTP to Grok's credits API; inference API keys and browser cookies are not used.
-- Auto-import compatible OpenCode V2 logins from `opencode.db` (Codex/ChatGPT, Claude, OpenCode Go, GitHub Copilot, xAI).
+- Auto-import compatible OpenCode V2 logins from `opencode.db` (Codex/ChatGPT, Claude, OpenCode Go, GitHub Copilot, xAI). Unused Current login toggles are turned on once when OpenCode already has that provider.
+- Antigravity current login reads the OpenCode account store, including more than one Google account.
 
 ## 0.1.3
 
