@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1
+
+- Brand-colored progress bars for each integration app (Codex Teal, Claude Coral, OpenCode Purple, Copilot Blue, Antigravity Blue).
+- Fully rebranded landing page and docs website for OpenBar (`https://4nkitd.github.io/openbar/`).
+- Removed all Umami analytics tracking scripts and attributes from the site.
+- Refreshed native AppKit UI screenshots across README and documentation.
+
 ## 0.1.0
 
 First OpenBar release, continuing the menu-bar quota work from Headroom.
