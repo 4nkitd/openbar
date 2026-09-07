@@ -29,7 +29,7 @@ Quit Headroom and disable its launch-at-login setting before switching. If you u
 
 ![OpenBar Settings](assets/screenshots/settings-dark.png)
 
-- OpenAI Codex, Claude Code, OpenCode Go, GitHub Copilot and Google Antigravity.
+- OpenAI Codex, Claude Code, OpenCode Go, GitHub Copilot, Google Antigravity and xAI Grok.
 - Multiple named accounts per integration, with independent credentials, refresh state, cached readings and enable/disable switches.
 - A compact progress bar for each account's most-constrained quota. Expand a provider to see every window and reset time.
 - A menu-bar summary of the most-constrained enabled account, with the account named in its tooltip.
@@ -47,10 +47,13 @@ Open **Integrations…** from the popover and choose a provider.
 | OpenCode Go | Use OpenCode's current key, or add separately named API keys | OpenCode Go usage API |
 | GitHub Copilot | Add a separate compatible token for each account | GitHub's internal Copilot quota API |
 | Antigravity | Import the current local sign-ins or choose a separate Google token / Antigravity account JSON file | Google Code Assist quota APIs |
+| xAI Grok | Use the current OpenCode xAI OAuth (V2 `opencode.db` or V1 `auth.json`) or Grok CLI login, or choose that account's credential file | Grok SuperGrok credits API |
 
 Name additional accounts, such as **Personal** and **Work**, then enter the token or select the existing credential file. Accounts appear under their provider in the popover. **Edit** changes the label or credentials. **Remove** removes the OpenBar configuration and its saved token, not the original sign-in file. Disabling one account does not disable its siblings.
 
 OpenBar does not implement new OAuth sign-in flows. Extra OAuth accounts must already be signed in through their provider tools. Select the file for the intended account; do not use one shared file for different identities. The **Use current login** entry follows the active sign-in. If an imported file contains several Google accounts, that source shows all of them; use separate credential files when you need independent controls for each one.
+
+On launch, OpenBar adds a Current login account for each compatible OpenCode V2 credential in `opencode.db` that is not already configured: ChatGPT/Codex (`openai`), Claude (`anthropic`), OpenCode Go, GitHub Copilot, and xAI Grok. Gemini API keys, Exa, Firecrawl and other OpenCode connectors are ignored. Existing accounts and off toggles are left alone.
 
 GitHub's unofficial quota endpoint does not accept every personal access token. The account is marked **Verified** only after a successful quota response. Saving a token alone is not proof of access.
 
@@ -73,7 +76,7 @@ All quota collection uses in-process HTTP requests to the issuing provider. Ther
 - Google OAuth client configuration uses the separate `in.4nkitd.openbar.oauth` Keychain service.
 - Quota snapshots live in `~/Library/Application Support/OpenBar/accounts-v1.json`, written atomically with mode `0600` and a separate success timestamp per configured account.
 - Existing preferences and `CodexBarLite/quotas-v2.json` readings are copied on first launch without deleting the original data. Launch-at-login registration is tied to the new app bundle; check the switch after installing OpenBar.
-- Codex token refresh updates only the selected account's auth file and preserves unrelated JSON fields. Claude refresh caches are scoped to their configured account and source sign-in.
+- Codex token refresh updates only the selected account's auth file and preserves unrelated JSON fields. Claude refresh caches are scoped to their configured account and source sign-in. xAI credentials are read-only; OpenBar does not refresh or rewrite OpenCode or Grok login files. Reconnect in OpenCode or with `grok login` if the token has expired.
 
 Background Keychain reads do not show authorization dialogs or wait for permission. If an older sign-in is protected by another app's access controls, use that account's existing credential file or explicitly allow OpenBar in Keychain Access. A readable account can continue refreshing while another sign-in is inaccessible.
 
@@ -115,4 +118,4 @@ Automatic updates are disabled by default. OpenBar does not use CodexBar Lite's 
 
 OpenBar is maintained by [4nkitd](https://github.com/4nkitd), based on [CodexBar Lite](https://github.com/wei-b0/codexbar-lite). HTTP integration references came from [Headroom](https://github.com/4nkitd/headroom) and [OpenCode Bar](https://github.com/opgginc/opencode-bar). See [third-party notices](THIRD_PARTY_NOTICES.md).
 
-OpenBar is independent of OpenAI, Anthropic, GitHub, Google and OpenCode. Provider names and marks identify integrations, not affiliation or endorsement.
+OpenBar is independent of OpenAI, Anthropic, GitHub, Google, OpenCode and xAI. Provider names and marks identify integrations, not affiliation or endorsement.

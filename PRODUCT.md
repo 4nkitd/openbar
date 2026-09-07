@@ -16,7 +16,7 @@ The native fork is now named **OpenBar** and maintained at `https://github.com/4
 
 The multi-provider changes below are unreleased source behavior. The published landing page and v0.2.5 release remain Codex-only until a coordinated release updates them.
 
-CodexBar Lite is a native macOS menu bar app that shows quota windows and reset times for OpenAI Codex, Claude Code, OpenCode Go, GitHub Copilot, and Gemini Antigravity. Each enabled integration gets its own linear progress bars. It notifies at 80%, 90%, exhaustion, and quota reset.
+CodexBar Lite is a native macOS menu bar app that shows quota windows and reset times for OpenAI Codex, Claude Code, OpenCode Go, GitHub Copilot, Gemini Antigravity, and xAI Grok. Each enabled integration gets its own linear progress bars. It notifies at 80%, 90%, exhaustion, and quota reset.
 
 ## Positioning
 

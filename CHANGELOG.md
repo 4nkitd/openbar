@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- xAI Grok SuperGrok quota via existing OpenCode xAI OAuth or `grok login` credential files. Read-only HTTP to Grok's credits API; inference API keys and browser cookies are not used.
+- Auto-import compatible OpenCode V2 logins from `opencode.db` (Codex/ChatGPT, Claude, OpenCode Go, GitHub Copilot, xAI).
+
 ## 0.1.3
 
 - Brand-colored progress bars for each integration app (Codex Teal, Claude Coral, OpenCode Purple, Copilot Blue, Antigravity Blue).
