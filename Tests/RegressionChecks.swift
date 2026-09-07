@@ -59,6 +59,21 @@ private final class AccountHTTPProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+private final class XaiHTTPProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let authorized = request.url?.host == "cli-chat-proxy.grok.com"
+            && request.value(forHTTPHeaderField: "Authorization") == "Bearer grok-oauth-token"
+        let response = HTTPURLResponse(url: request.url!, statusCode: authorized ? 200 : 403, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+        let body = json(#"{"config":{"creditUsagePercent":42,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","end":"2026-07-14T10:46:52Z"}}}"#)
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
 @main
 private struct RegressionChecks {
     @MainActor static func main() async throws {
@@ -75,6 +90,33 @@ private struct RegressionChecks {
         try check(go.limits.map(\.remainingPercent) == [35, 70, 88], "Go remaining quota must not be inverted")
         let alternate = try await service.parseOpenCodeGo(json(#"{"usage":{"rolling":{"percent":"25","resetsAt":"2026-10-01T00:00:00.000Z"}}}"#))
         try check(alternate.primary.usedPercent == 25 && alternate.primary.resetAt != nil, "Alternate Go schema")
+        let xai = try await service.parseXai(json(#"{"config":{"creditUsagePercent":75,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","start":"2026-07-07T10:46:52.885620+00:00","end":"2026-07-14T10:46:52.885620+00:00"}}}"#))
+        try check(xai.primary.usedPercent == 75 && xai.primary.cadence == .weekly && xai.primary.resetAt != nil, "xAI weekly credits percent and reset")
+        let xaiZero = try await service.parseXai(json(#"{"config":{"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","end":"2026-07-14T10:46:52Z"}}}"#))
+        try check(xaiZero.primary.usedPercent == 0, "Omitted xAI percent with a period is unused, not missing")
+        let xaiMonthly = try await service.parseXai(json(#"{"config":{"creditUsagePercent":"12","billingPeriodEnd":"2026-08-01T00:00:00Z","currentPeriod":{"type":"USAGE_PERIOD_TYPE_MONTHLY"}}}"#))
+        try check(xaiMonthly.primary.cadence == .monthly && xaiMonthly.primary.resetAt != nil, "xAI monthly period and billingPeriodEnd fallback")
+        do {
+            _ = try await service.parseXai(json(#"{"config":{"creditUsagePercent":"NaN"}}"#))
+            throw CheckFailure(description: "Nonfinite xAI usage accepted")
+        } catch is IntegrationError {}
+        try check(CredentialStore.parseXaiAccessToken(["xai": ["type": "oauth", "access": "grok-oauth-token"]]) == "grok-oauth-token", "OpenCode xAI OAuth access")
+        try check(CredentialStore.parseXaiAccessToken(["xai": ["type": "api", "key": "xai-inference"]]) == nil, "xAI inference keys are not SuperGrok quota")
+        try check(CredentialStore.parseXaiAccessToken(["opencode-go": ["type": "api", "key": "go-key"], "anthropic": ["type": "oauth", "access": "claude"]]) == nil, "Must not take another provider's key from auth.json")
+        try check(CredentialStore.parseXaiAccessToken(["https://auth.x.ai::openid profile": ["key": "grok-cli-token"]]) == "grok-cli-token", "Grok CLI OIDC auth.json")
+        try check(CredentialStore.parseOpenCodeCredentialValue(["type": "oauth", "methodID": "device", "access": "v2-oauth", "refresh": "r"]) == "v2-oauth", "OpenCode V2 credential JSON")
+        try check(CredentialStore.parseOpenCodeCredentialValue(["type": "key", "key": "xai-inference"]) == nil, "OpenCode V2 API keys are not SuperGrok quota")
+        try check(CredentialStore.openCodeV2Access(["type": "key", "key": "go-key"], oauth: false, key: true) == "go-key", "OpenCode V2 Go API key")
+        let seeded = SettingsStore.importedOpenCodeAccounts(existing: [.current(.codex)], available: [.xai, .openCodeGo, .githubCopilot, .codex])
+        try check(Set(seeded.enable) == [.xai, .openCodeGo, .githubCopilot, .codex], "OpenCode V2 import enables missing and unused current-login providers")
+        try check(seeded.accounts.contains(where: { $0.integration == .githubCopilot && $0.source == .automatic }), "GitHub Copilot current login is created from OpenCode V2")
+        let already = SettingsStore.importedOpenCodeAccounts(existing: [.current(.xai)], available: [.xai], alreadyImported: [.xai])
+        try check(already.enable.isEmpty && already.accounts.count == 1, "A completed OpenCode import is not repeated")
+        let firstRun = SettingsStore.importedOpenCodeAccounts(existing: IntegrationID.allCases.map(IntegrationAccount.current), available: [.xai, .githubCopilot])
+        try check(Set(firstRun.enable) == [.xai, .githubCopilot], "Current-login defaults are turned on when OpenCode V2 has them")
+        let tokenAccount = IntegrationAccount(id: "gh", integration: .githubCopilot, label: "Work", source: .token, credentialPath: nil, isEnabled: false)
+        let custom = SettingsStore.importedOpenCodeAccounts(existing: [tokenAccount], available: [.githubCopilot])
+        try check(custom.enable.isEmpty && custom.accounts.count == 1, "Do not override a GitHub token account the user already added")
         let copilot = try await service.parseGitHubCopilot(json(#"{"copilot_plan":"individual_pro","quota_reset_date":"2026-10-01","quota_snapshots":{"chat":{"entitlement":-1,"remaining":-1},"premium_interactions":{"entitlement":1500,"remaining":-300}}}"#))
         try check(copilot.primary.remainingPercent == 0, "Overage must show exhausted, not negative remaining")
         try check(copilot.primary.resetAt != nil, "Copilot date-only reset")
@@ -168,8 +210,32 @@ private struct RegressionChecks {
         let workUsage = try await isolatedService.fetch(work)
         try check(personalUsage[0].primary.usedPercent == 17 && workUsage[0].primary.usedPercent == 43, "HTTP requests must use each account's credentials and account ID")
         try check(personalUsage[0].id != workUsage[0].id && workUsage[0].configurationID == work.id, "Quota identity must be account-scoped")
+        let xaiAuthPath = output.appendingPathComponent("xai-auth.json")
+        try writePrivateData(json(#"{"xai":{"type":"oauth","access":"grok-oauth-token"}}"#), to: xaiAuthPath)
+        let xaiAccount = IntegrationAccount(id: "xai-personal", integration: .xai, label: "Grok", source: .file, credentialPath: xaiAuthPath.path, isEnabled: true)
+        let xaiConfiguration = URLSessionConfiguration.ephemeral
+        xaiConfiguration.protocolClasses = [XaiHTTPProtocol.self]
+        let xaiService = IntegrationService(configuration: xaiConfiguration)
+        let xaiUsage = try await xaiService.fetch(xaiAccount)
+        try check(xaiUsage[0].primary.usedPercent == 42 && xaiUsage[0].configurationID == xaiAccount.id, "xAI HTTP must use the selected auth file")
+        let xaiGoOnly = output.appendingPathComponent("opencode-go-only.json")
+        try writePrivateData(json(#"{"opencode-go":{"type":"api","key":"go-key"}}"#), to: xaiGoOnly)
+        let xaiWrongFile = IntegrationAccount(id: "xai-wrong", integration: .xai, label: "Wrong file", source: .file, credentialPath: xaiGoOnly.path, isEnabled: true)
+        do {
+            _ = try await xaiService.fetch(xaiWrongFile)
+            throw CheckFailure(description: "xAI accepted a non-xAI credential file")
+        } catch IntegrationError.notConfigured {}
+        let xaiDB = output.appendingPathComponent("opencode.db")
+        try writeOpenCodeCredentialDB(to: xaiDB, integration: "xai", value: #"{"type":"oauth","methodID":"device","access":"grok-oauth-token","refresh":"r"}"#)
+        try check(CredentialStore.parseXaiAccessToken(at: xaiDB) == "grok-oauth-token", "OpenCode V2 sqlite xAI OAuth")
+        let xaiDBAccount = IntegrationAccount(id: "xai-db", integration: .xai, label: "V2", source: .file, credentialPath: xaiDB.path, isEnabled: true)
+        let xaiDBUsage = try await xaiService.fetch(xaiDBAccount)
+        try check(xaiDBUsage[0].primary.usedPercent == 42, "xAI HTTP must use OpenCode V2 database credentials")
+        let otherDB = output.appendingPathComponent("other.db")
+        try writeOpenCodeCredentialDB(to: otherDB, integration: "opencode-go", value: #"{"type":"key","key":"go-key"}"#)
+        try check(CredentialStore.parseXaiAccessToken(at: otherDB) == nil, "Must not read another integration from OpenCode sqlite")
         try check(personal.tokenKey != work.tokenKey && personal.claudeCacheKey != work.claudeCacheKey, "Secret and OAuth caches must be isolated")
-        for integration in [IntegrationID.claude, .antigravity] {
+        for integration in [IntegrationID.claude, .antigravity, .xai] {
             let missing = IntegrationAccount(id: UUID().uuidString, integration: integration, label: "Missing file", source: .file, credentialPath: output.appendingPathComponent(UUID().uuidString).path, isEnabled: true)
             do {
                 _ = try await isolatedService.fetch(missing)
@@ -212,7 +278,7 @@ private struct RegressionChecks {
         app.setActivationPolicy(.accessory)
         let controller = UsagePopoverViewController()
         let enabled = IntegrationID.allCases
-        let providers = [codex, claude, go, copilot, google]
+        let providers = [codex, claude, go, copilot, google, xai]
         var states = Dictionary(uniqueKeysWithValues: zip(enabled, providers).map { ($0, IntegrationState(providers: [$1], updatedAt: Date())) })
         states[.antigravity]?.providers = [sample(.antigravity, account: "personal@example.test", used: 8), sample(.antigravity, account: "work@example.test", used: 12)]
         let start = ProcessInfo.processInfo.systemUptime
@@ -276,6 +342,26 @@ private struct RegressionChecks {
     }
 
     @MainActor private static func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+
+    private static func writeOpenCodeCredentialDB(to url: URL, integration: String, value: String) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+        process.arguments = [url.path]
+        let input = Pipe()
+        let err = Pipe()
+        process.standardInput = input
+        process.standardError = err
+        try process.run()
+        let escaped = value.replacingOccurrences(of: "'", with: "''")
+        let sql = """
+        CREATE TABLE credential (id TEXT, integration_id TEXT, label TEXT, value TEXT, connector_id TEXT, method_id TEXT, active INTEGER, time_created INTEGER, time_updated INTEGER);
+        INSERT INTO credential VALUES ('cred_test','\(integration)','xAI','\(escaped)',NULL,'device',1,1,2);
+        """
+        try input.fileHandleForWriting.write(contentsOf: Data(sql.utf8))
+        try input.fileHandleForWriting.close()
+        process.waitUntilExit()
+        try check(process.terminationStatus == 0, "sqlite3 fixture failed")
+    }
 
     @MainActor private static func snapshot(_ view: NSView, to url: URL) throws {
         view.layoutSubtreeIfNeeded()
