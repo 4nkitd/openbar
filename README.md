@@ -2,6 +2,8 @@
 
 Native macOS menu-bar monitoring for your AI coding subscriptions. See each account's quota and reset times without keeping provider dashboards open.
 
+![OpenBar Popover](assets/screenshots/popover-dark.png)
+
 [Source](https://github.com/4nkitd/openbar) · [Issues](https://github.com/4nkitd/openbar/issues)
 
 OpenBar continues the menu-bar quota work from [Headroom](https://github.com/4nkitd/headroom). The inherited `docs/` website still describes the original CodexBar Lite release and is not the OpenBar website.
@@ -24,6 +26,8 @@ This release is ad-hoc signed and is not notarized. If Gatekeeper blocks the app
 Quit Headroom and disable its launch-at-login setting before switching. If you use its CLI, `headroom disable` turns off that startup entry. OpenBar can reuse supported provider sign-ins, but Headroom-specific preferences, extra account labels, widgets and the notch HUD are not migrated. Configure your accounts in **OpenBar → Integrations**.
 
 ## What it shows
+
+![OpenBar Settings](assets/screenshots/settings-dark.png)
 
 - OpenAI Codex, Claude Code, OpenCode Go, GitHub Copilot and Google Antigravity.
 - Multiple named accounts per integration, with independent credentials, refresh state, cached readings and enable/disable switches.

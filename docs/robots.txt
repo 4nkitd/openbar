@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://getcodexbar.xyz/sitemap.xml
+Sitemap: https://4nkitd.github.io/openbar/sitemap.xml
