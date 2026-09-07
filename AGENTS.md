@@ -13,7 +13,7 @@ Two surfaces in one repo:
 - `bash scripts/check.sh` — offline regression checks and native AppKit screenshots using `swiftc`; works with Command Line Tools without XCTest. Output goes to a temporary directory, or `CHECK_OUTPUT_DIR`.
 - `BUILD_ONLY=1 ./scripts/install.sh` — release build + assemble `dist/OpenBar.app` (ad-hoc codesign) without installing.
 - `./scripts/install.sh` — same, then **replaces `/Applications/OpenBar.app` and launches it**. Env overrides: `APP_VERSION`, `BUILD_NUMBER`, `CODESIGN_IDENTITY` (default `-` = ad-hoc).
-- `./scripts/release.sh <version> <build-number>` — Sparkle release: builds the update zip and regenerates root `appcast.xml`. Requires the Sparkle EdDSA private key in the login keychain or the appcast step fails.
+- `./scripts/release.sh <version> <build-number>` — build a platform-specific ZIP and print SHA-256. Generates `appcast.xml` only when explicit Sparkle feed/public-key configuration is present; that optional step needs the matching private signing key in Keychain.
 
 `install.sh` runs `swift build -c release` itself — no need to build first (README is misleading here). The Info.plist is generated inline by `install.sh`; there is no checked-in plist.
 

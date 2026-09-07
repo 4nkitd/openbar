@@ -4,7 +4,24 @@ Native macOS menu-bar monitoring for your AI coding subscriptions. See each acco
 
 [Source](https://github.com/4nkitd/openbar) · [Issues](https://github.com/4nkitd/openbar/issues)
 
-**Development build.** OpenBar has no published release yet. This repository is private. The inherited `docs/` website still describes the original CodexBar Lite release and is not the OpenBar website.
+OpenBar continues the menu-bar quota work from [Headroom](https://github.com/4nkitd/headroom). The inherited `docs/` website still describes the original CodexBar Lite release and is not the OpenBar website.
+
+## Install
+
+Requires an Apple Silicon Mac running macOS 13 Ventura or later.
+
+```bash
+brew install --cask 4nkitd/tap/openbar
+open -a OpenBar
+```
+
+Or download [OpenBar v0.1.0](https://github.com/4nkitd/openbar/releases/download/v0.1.0/OpenBar-0.1.0-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
+
+This release is ad-hoc signed and is not notarized. If Gatekeeper blocks the app, review the download source and allow it under **System Settings → Privacy & Security → Open Anyway**. Homebrew updates are available through `brew upgrade --cask 4nkitd/tap/openbar`.
+
+### Moving from Headroom
+
+Quit Headroom and disable its launch-at-login setting before switching. If you use its CLI, `headroom disable` turns off that startup entry. OpenBar can reuse supported provider sign-ins, but Headroom-specific preferences, extra account labels, widgets and the notch HUD are not migrated. Configure your accounts in **OpenBar → Integrations**.
 
 ## What it shows
 
@@ -63,7 +80,7 @@ Manual refreshes observe a minimum interval of one minute per account, or five m
 Requires macOS 13 or later and Swift 5.10 or later. The app is AppKit-based; Sparkle is its only SwiftPM dependency.
 
 ```bash
-git clone git@github.com:4nkitd/openbar.git
+git clone https://github.com/4nkitd/openbar.git
 cd openbar
 swift build -Xswiftc -warnings-as-errors
 BUILD_ONLY=1 ./scripts/install.sh
@@ -88,7 +105,7 @@ The regression checks compile the actual sources with `swiftc` and work with Com
 
 Automatic updates are disabled by default. OpenBar does not use CodexBar Lite's update feed or signing key. The checked-in `appcast.xml` is an empty OpenBar feed until a release is created.
 
-To configure updates, set an accessible HTTPS `SPARKLE_FEED_URL` and matching `SPARKLE_PUBLIC_KEY` when building. A private GitHub repository does not provide an anonymously accessible update feed. `scripts/release.sh <version> <build-number>` requires these settings and the matching Sparkle signing key in Keychain. No release credentials are bundled.
+`scripts/release.sh <version> <build-number>` creates a platform-specific release ZIP and prints its SHA-256. To also generate a Sparkle feed, set an accessible HTTPS `SPARKLE_FEED_URL` and matching `SPARKLE_PUBLIC_KEY`, with the matching signing key in Keychain. No release credentials are bundled.
 
 ## Credits
 
