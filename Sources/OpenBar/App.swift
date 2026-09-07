@@ -119,7 +119,7 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         guard key != statusKey, let button = statusItem.button else { return }
         statusKey = key
         let state: StatusIconState = selected.map {
-            .usage(progress: (percent ?? 0) / 100, color: AppBranding.progressColor(forUsedPercent: Int($0.0.limitingWindow.usedPercent)))
+            .usage(progress: (percent ?? 0) / 100, color: AppBranding.progressColor(forUsedPercent: Int($0.0.limitingWindow.usedPercent), integration: $0.0.integration))
         } ?? .empty
         button.image = StatusIconRenderer.render(state, logo: AppBranding.logoImage)
         button.attributedTitle = NSAttributedString(string: text + (warning ? " ⚠" : ""), attributes: [

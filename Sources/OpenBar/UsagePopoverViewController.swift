@@ -308,7 +308,7 @@ private final class AccountQuotaView: NSStackView {
         statusLabel.isHidden = status?.message == nil && status?.isRefreshing != true
         statusLabel.stringValue = status?.isRefreshing == true ? "Refreshing…" : "Cached"
         statusLabel.toolTip = status?.message
-        summary.update(provider.limitingWindow, mode: mode)
+        summary.update(provider.limitingWindow, mode: mode, integration: provider.integration)
         details.isHidden = !expanded
         if expanded {
             while detailRows.count < provider.limits.count {
@@ -319,7 +319,7 @@ private final class AccountQuotaView: NSStackView {
             }
             for (index, row) in detailRows.enumerated() {
                 row.isHidden = index >= provider.limits.count
-                if index < provider.limits.count { row.update(provider.limits[index], mode: mode) }
+                if index < provider.limits.count { row.update(provider.limits[index], mode: mode, integration: provider.integration) }
             }
         }
         summary.isHidden = expanded
@@ -389,12 +389,12 @@ private final class LimitQuotaView: NSStackView {
 
     required init?(coder: NSCoder) { nil }
 
-    func update(_ limit: ProviderLimit, mode: UsageDisplayMode) {
+    func update(_ limit: ProviderLimit, mode: UsageDisplayMode, integration: IntegrationID? = nil) {
         let shown = mode == .used ? limit.usedPercent : limit.remainingPercent
         name.stringValue = limit.displayLabel
         name.toolTip = limit.displayLabel
         value.stringValue = String(format: "%.0f%% %@", shown, mode == .used ? "used" : "left")
-        let color = AppBranding.progressColor(forUsedPercent: Int(limit.usedPercent))
+        let color = AppBranding.progressColor(forUsedPercent: Int(limit.usedPercent), integration: integration)
         value.textColor = color
         bar.barColor = color
         bar.progress = shown

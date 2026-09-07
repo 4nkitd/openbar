@@ -32,10 +32,29 @@ enum AppBranding {
         return image
     }
 
-    /// Semantic progress color: accent at calm usage, orange/red as limits approach.
-    static func progressColor(forUsedPercent percent: Int) -> NSColor {
+    /// Integration brand color associated with the provider application.
+    static func brandColor(for integration: IntegrationID) -> NSColor {
+        switch integration {
+        case .codex:
+            return NSColor(srgbRed: 0x10 / 255.0, green: 0xA3 / 255.0, blue: 0x7F / 255.0, alpha: 1)
+        case .claude:
+            return NSColor(srgbRed: 0xD9 / 255.0, green: 0x77 / 255.0, blue: 0x57 / 255.0, alpha: 1)
+        case .openCodeGo:
+            return NSColor(srgbRed: 0x9B / 255.0, green: 0x51 / 255.0, blue: 0xE0 / 255.0, alpha: 1)
+        case .githubCopilot:
+            return NSColor(srgbRed: 0x58 / 255.0, green: 0xA6 / 255.0, blue: 0xFF / 255.0, alpha: 1)
+        case .antigravity:
+            return NSColor(srgbRed: 0x42 / 255.0, green: 0x85 / 255.0, blue: 0xF4 / 255.0, alpha: 1)
+        }
+    }
+
+    /// Semantic progress color: brand color (or default accent) at calm usage, orange/red as limits approach.
+    static func progressColor(forUsedPercent percent: Int, integration: IntegrationID? = nil) -> NSColor {
         if percent >= 90 { return criticalColor }
         if percent >= 80 { return warningColor }
+        if let integration = integration {
+            return brandColor(for: integration)
+        }
         return accentColor
     }
 
