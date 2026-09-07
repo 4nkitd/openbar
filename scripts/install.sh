@@ -33,6 +33,7 @@ cp "$ROOT_DIR/assets/providers/opencode.svg" "$RESOURCES_DIR/ProviderOpenCode.sv
 cp "$ROOT_DIR/assets/providers/codex.pdf" "$RESOURCES_DIR/ProviderCodex.pdf"
 cp "$ROOT_DIR/assets/providers/antigravity.png" "$RESOURCES_DIR/ProviderAntigravity.png"
 cp "$ROOT_DIR/assets/providers/copilot.pdf" "$RESOURCES_DIR/ProviderCopilot.pdf"
+cp "$ROOT_DIR/assets/providers/xai.svg" "$RESOURCES_DIR/ProviderXAI.svg"
 cp "$ROOT_DIR/THIRD_PARTY_NOTICES.md" "$RESOURCES_DIR/THIRD_PARTY_NOTICES.md"
 cp -R "$ROOT_DIR/licenses" "$RESOURCES_DIR/licenses"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/$APP_NAME" 2>/dev/null || true

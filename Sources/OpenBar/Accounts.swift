@@ -40,4 +40,15 @@ struct IntegrationAccount: Codable, Equatable, Identifiable {
 
 extension IntegrationID {
     var acceptsAPIToken: Bool { self == .openCodeGo || self == .githubCopilot }
+
+    var openCodeProviderID: String? {
+        switch self {
+        case .codex: return "openai"
+        case .claude: return "anthropic"
+        case .openCodeGo: return "opencode-go"
+        case .githubCopilot: return "github-copilot"
+        case .xai: return "xai"
+        case .antigravity: return nil
+        }
+    }
 }

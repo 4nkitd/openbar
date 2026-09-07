@@ -143,7 +143,7 @@ final class SettingsWindowController: NSWindowController, NSToolbarDelegate {
         buttons.spacing = 8
         return pane([
             title,
-            settingsCaption("Your AI coding quotas, in one menu bar. Codex, Claude Code, OpenCode Go, GitHub Copilot and Antigravity, with separate accounts and direct HTTP usage collection."),
+            settingsCaption("Your AI coding quotas, in one menu bar. Codex, Claude Code, OpenCode Go, GitHub Copilot, Antigravity and xAI Grok, with separate accounts and direct HTTP usage collection."),
             buttons,
             settingsCaption("No browser cookies, telemetry or third-party backend. Built on CodexBar Lite, with integration references from Headroom and OpenCode Bar. Independent of all providers."),
             updateButton,

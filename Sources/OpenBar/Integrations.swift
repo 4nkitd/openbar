@@ -3,6 +3,7 @@ import Security
 import CryptoKit
 import LocalAuthentication
 import Darwin
+import SQLite3
 
 // Modified Swift adaptation of Headroom's HTTP adapters; see THIRD_PARTY_NOTICES.md.
 
@@ -12,6 +13,7 @@ enum IntegrationID: String, CaseIterable, Codable {
     case openCodeGo
     case githubCopilot
     case antigravity
+    case xai
 
     var name: String {
         switch self {
@@ -20,6 +22,7 @@ enum IntegrationID: String, CaseIterable, Codable {
         case .openCodeGo: return "OpenCode Go"
         case .githubCopilot: return "GitHub Copilot"
         case .antigravity: return "Gemini Antigravity"
+        case .xai: return "xAI Grok"
         }
     }
 
@@ -30,6 +33,7 @@ enum IntegrationID: String, CaseIterable, Codable {
         case .openCodeGo: return "Add an OpenCode Go API key below or sign in through OpenCode."
         case .githubCopilot: return "Add a GitHub token with Copilot access below."
         case .antigravity: return "Sign in with Antigravity or the OpenCode Antigravity plugin."
+        case .xai: return "Sign in with OpenCode xAI OAuth or grok login."
         }
     }
 }
@@ -174,6 +178,7 @@ enum CredentialStore {
 
     static func openCodeGoToken() -> String? {
         if let configured = configuredToken(for: .current(.openCodeGo)) { return configured }
+        if let key = openCodeV2Access(for: .openCodeGo, oauth: false, key: true) { return key }
         let paths = [
             home(".local/share/opencode/auth.json"),
             home("Library/Application Support/opencode/auth.json")
@@ -199,6 +204,14 @@ enum CredentialStore {
             return cachedClaudeCredentials(for: credentials, key: account.claudeCacheKey)
         }
         if let raw = try? String(contentsOf: home(".claude/.credentials.json"), encoding: .utf8), let credentials = parseClaudeCredentials(raw) {
+            return cachedClaudeCredentials(for: credentials, key: account.claudeCacheKey)
+        }
+        if let value = openCodeV2Value(for: .claude), let access = openCodeV2Access(value, oauth: true, key: false) {
+            let credentials = OAuthCredentials(
+                accessToken: access,
+                refreshToken: nonEmptyString(value["refresh"] ?? value["refresh_token"]) ?? "",
+                expiresAtMillis: number(value["expires"])?.int64Value ?? 0
+            )
             return cachedClaudeCredentials(for: credentials, key: account.claudeCacheKey)
         }
         let paths = [
@@ -277,6 +290,13 @@ enum CredentialStore {
                 ))
             }
         }
+        let tokenFile = home(".gemini/antigravity-cli/antigravity-oauth-token")
+        if let raw = try? String(contentsOf: tokenFile, encoding: .utf8) {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, seen.insert(trimmed).inserted {
+                accounts.append(GoogleCredentials(label: "Antigravity CLI", refreshToken: trimmed, accessToken: nil))
+            }
+        }
         return accounts
     }
 
@@ -311,6 +331,148 @@ enum CredentialStore {
         let clients = try GoogleOAuthClient.fromEnvironment(environment)
         for (kind, client) in clients { try saveGoogleOAuthClient(client, kind: kind) }
         return clients.count
+    }
+
+    static func githubToken(for account: IntegrationAccount) -> String? {
+        if let configured = configuredToken(for: account) { return configured }
+        guard account.source == .automatic else { return nil }
+        return openCodeV2Access(for: .githubCopilot, oauth: true, key: true)
+    }
+
+    static func openCodeCodexTokens() -> CodexAuth.Tokens? {
+        guard let value = openCodeV2Value(for: .codex),
+              let access = openCodeV2Access(value, oauth: true, key: false) else { return nil }
+        let metadata = value["metadata"] as? [String: Any]
+        return CodexAuth.Tokens(
+            accessToken: access,
+            refreshToken: nonEmptyString(value["refresh"] ?? value["refresh_token"]),
+            idToken: nil,
+            accountID: nonEmptyString(metadata?["accountID"] ?? metadata?["account_id"])
+        )
+    }
+
+    static func hasOpenCodeV2Credential(for integration: IntegrationID) -> Bool {
+        switch integration {
+        case .codex: return openCodeCodexTokens() != nil
+        case .claude: return openCodeV2Access(for: .claude, oauth: true, key: false) != nil
+        case .openCodeGo: return openCodeV2Access(for: .openCodeGo, oauth: false, key: true) != nil
+        case .githubCopilot: return openCodeV2Access(for: .githubCopilot, oauth: true, key: true) != nil
+        case .xai: return openCodeV2Access(for: .xai, oauth: true, key: false) != nil
+        case .antigravity:
+            if !antigravityAccounts(for: .current(.antigravity)).isEmpty { return true }
+            for url in openCodeDatabaseURLs() {
+                if let value = openCodeV2Value(provider: "google", database: url),
+                   openCodeV2Access(value, oauth: true, key: false) != nil { return true }
+            }
+            return false
+        }
+    }
+
+    static func xaiAccessToken(for account: IntegrationAccount) -> String? {
+        if account.source == .file {
+            guard let url = account.credentialURL else { return nil }
+            return parseXaiAccessToken(at: url)
+        }
+        let paths = openCodeDatabaseURLs() + [
+            home(".local/share/opencode/auth.json"),
+            home("Library/Application Support/opencode/auth.json"),
+            home(".grok/auth.json")
+        ]
+        for path in paths {
+            if let token = parseXaiAccessToken(at: path) { return token }
+        }
+        return nil
+    }
+
+    static func parseXaiAccessToken(at url: URL) -> String? {
+        if isSQLite(url) {
+            if let value = openCodeV2Value(provider: "xai", database: url) {
+                return openCodeV2Access(value, oauth: true, key: false) ?? parseXaiAccessToken(value)
+            }
+            return nil
+        }
+        guard let object = jsonObject(at: url) else { return nil }
+        return parseXaiAccessToken(object)
+    }
+
+    static func parseOpenCodeCredentialValue(_ object: [String: Any]) -> String? {
+        openCodeV2Access(object, oauth: true, key: false)
+    }
+
+    static func openCodeV2Access(_ object: [String: Any], oauth: Bool, key: Bool) -> String? {
+        let type = (object["type"] as? String)?.lowercased()
+        if oauth, type == "oauth" { return nonEmptyString(object["access"] ?? object["access_token"]) }
+        if key, type == "key" || type == "api" { return nonEmptyString(object["key"]) }
+        return nil
+    }
+
+    static func openCodeV2Access(for integration: IntegrationID, oauth: Bool, key: Bool) -> String? {
+        guard let value = openCodeV2Value(for: integration) else { return nil }
+        return openCodeV2Access(value, oauth: oauth, key: key)
+    }
+
+    static func openCodeV2Value(for integration: IntegrationID) -> [String: Any]? {
+        guard let provider = integration.openCodeProviderID else { return nil }
+        for url in openCodeDatabaseURLs() {
+            if let value = openCodeV2Value(provider: provider, database: url) { return value }
+        }
+        return nil
+    }
+
+    static func parseXaiAccessToken(_ object: [String: Any]) -> String? {
+        if let access = parseOpenCodeCredentialValue(object) { return access }
+        for key in ["xai", "xai-oauth", "grok"] {
+            guard let entry = object[key] as? [String: Any] else { continue }
+            if let access = parseOpenCodeCredentialValue(entry) { return access }
+            let type = (entry["type"] as? String)?.lowercased()
+            if type == "api" || type == "key" { continue }
+            if let access = nonEmptyString(entry["access"] ?? entry["access_token"]) { return access }
+        }
+        var oidc: String?
+        var legacy: String?
+        for (scope, value) in object {
+            guard let entry = value as? [String: Any], let key = nonEmptyString(entry["key"]) else { continue }
+            if scope.hasPrefix("https://auth.x.ai::") { oidc = key }
+            else if scope == "https://accounts.x.ai/sign-in" || scope.contains("/sign-in") { legacy = key }
+        }
+        return oidc ?? legacy
+    }
+
+    static func openCodeV2Value(provider: String, database url: URL) -> [String: Any]? {
+        var db: OpaquePointer?
+        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
+        guard sqlite3_open_v2(url.path, &db, flags, nil) == SQLITE_OK, let db else {
+            if db != nil { sqlite3_close(db) }
+            return nil
+        }
+        defer { sqlite3_close(db) }
+        let sql = "SELECT value FROM credential WHERE integration_id = ? ORDER BY CASE WHEN active = 1 THEN 0 ELSE 1 END, time_updated DESC"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, provider, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let bytes = sqlite3_column_text(statement, 0) else { continue }
+            let raw = String(cString: bytes)
+            guard let data = raw.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+            return object
+        }
+        return nil
+    }
+
+    private static func openCodeDatabaseURLs() -> [URL] {
+        [
+            home(".local/share/opencode/opencode.db"),
+            home("Library/Application Support/opencode/opencode.db")
+        ]
+    }
+
+    private static func isSQLite(_ url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        let prefix = (try? handle.read(upToCount: 15)) ?? Data()
+        return prefix == Data("SQLite format 3".utf8)
     }
 
     static func codexAuthURL() -> URL { home(".codex/auth.json") }
@@ -473,11 +635,12 @@ actor IntegrationService {
         do {
             let providers: [ProviderUsage]
             switch account.integration {
-            case .codex: providers = [try await fetchCodex(authURL: account.credentialURL ?? CredentialStore.codexAuthURL())]
+            case .codex: providers = [try await fetchCodex(account: account)]
             case .claude: providers = [try await fetchClaude(account: account)]
             case .openCodeGo: providers = [try await fetchOpenCodeGo(account: account)]
             case .githubCopilot: providers = [try await fetchGitHubCopilot(account: account)]
             case .antigravity: providers = try await fetchAntigravity(account: account)
+            case .xai: providers = [try await fetchXai(account: account)]
             }
             return providers.map { attachAccount(account, to: $0) }
         } catch IntegrationError.partial(let providers, let message) {
@@ -494,7 +657,7 @@ actor IntegrationService {
 
     func consumeCodexResetCredit(account: IntegrationAccount) async throws -> ConsumeResetCreditsResponse {
         guard account.integration == .codex else { throw IntegrationError.invalidResponse("Reset credits are only supported for Codex.") }
-        let tokens = try await validCodexTokens(authURL: account.credentialURL ?? CredentialStore.codexAuthURL())
+        let tokens = try await validCodexTokens(account: account)
         var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume")!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(tokens.accessToken ?? "")", forHTTPHeaderField: "Authorization")
@@ -508,8 +671,8 @@ actor IntegrationService {
         return try JSONDecoder().decode(ConsumeResetCreditsResponse.self, from: data)
     }
 
-    private func fetchCodex(authURL: URL) async throws -> ProviderUsage {
-        var tokens = try await validCodexTokens(authURL: authURL)
+    private func fetchCodex(account: IntegrationAccount) async throws -> ProviderUsage {
+        var tokens = try await validCodexTokens(account: account)
         let urls = [
             URL(string: "https://chatgpt.com/backend-api/wham/usage")!,
             URL(string: "https://chatgpt.com/backend-api/codex/usage")!
@@ -524,7 +687,7 @@ actor IntegrationService {
             do {
                 var (data, response) = try await session.data(for: request)
                 if (response as? HTTPURLResponse)?.statusCode == 401 {
-                    tokens = try await validCodexTokens(authURL: authURL, forceRefresh: true)
+                    tokens = try await validCodexTokens(account: account, forceRefresh: true)
                     request.setValue("Bearer \(tokens.accessToken ?? "")", forHTTPHeaderField: "Authorization")
                     (data, response) = try await session.data(for: request)
                 }
@@ -534,6 +697,16 @@ actor IntegrationService {
             } catch { throw error }
         }
         throw IntegrationError.invalidResponse("Codex usage API is unavailable.")
+    }
+
+    private func validCodexTokens(account: IntegrationAccount, forceRefresh: Bool = false) async throws -> CodexAuth.Tokens {
+        if account.source != .file,
+           !FileManager.default.isReadableFile(atPath: CredentialStore.codexAuthURL().path),
+           let tokens = CredentialStore.openCodeCodexTokens(),
+           let access = tokens.accessToken, !access.isEmpty {
+            return tokens
+        }
+        return try await validCodexTokens(authURL: account.credentialURL ?? CredentialStore.codexAuthURL(), forceRefresh: forceRefresh)
     }
 
     private func validCodexTokens(authURL: URL, forceRefresh: Bool = false) async throws -> CodexAuth.Tokens {
@@ -754,7 +927,7 @@ actor IntegrationService {
     }
 
     private func fetchGitHubCopilot(account: IntegrationAccount) async throws -> ProviderUsage {
-        guard let token = CredentialStore.configuredToken(for: account) else {
+        guard let token = CredentialStore.githubToken(for: account) else {
             throw IntegrationError.notConfigured("GitHub token is not configured.")
         }
         var request = URLRequest(url: URL(string: "https://api.github.com/copilot_internal/user")!)
@@ -765,6 +938,59 @@ actor IntegrationService {
         let (data, response) = try await session.data(for: request)
         try validate(response, data: data, provider: "GitHub Copilot")
         return try parseGitHubCopilot(data)
+    }
+
+    private func fetchXai(account: IntegrationAccount) async throws -> ProviderUsage {
+        guard let token = CredentialStore.xaiAccessToken(for: account) else {
+            throw IntegrationError.notConfigured("xAI SuperGrok OAuth credentials were not found.")
+        }
+        var request = URLRequest(url: URL(string: "https://cli-chat-proxy.grok.com/v1/billing?format=credits")!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("OpenBar", forHTTPHeaderField: "User-Agent")
+        request.setValue("grok-build", forHTTPHeaderField: "x-grok-client-surface")
+        request.setValue("1.0.0", forHTTPHeaderField: "x-grok-client-version")
+        request.setValue("xai-grok-cli", forHTTPHeaderField: "x-xai-token-auth")
+        let (data, response) = try await session.data(for: request)
+        try validate(response, data: data, provider: "xAI")
+        return try parseXai(data)
+    }
+
+    func parseXai(_ data: Data) throws -> ProviderUsage {
+        guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let config = value["config"] as? [String: Any] else {
+            throw IntegrationError.invalidResponse("xAI credits response was not JSON.")
+        }
+        let period = config["currentPeriod"] as? [String: Any]
+        let hasUsage = config["creditUsagePercent"] != nil
+        let hasPeriod = period != nil && (period?["type"] != nil || period?["start"] != nil || period?["end"] != nil)
+        guard hasUsage || hasPeriod else { throw IntegrationError.invalidResponse("xAI returned no SuperGrok quota window.") }
+        let used: Double
+        if hasUsage {
+            guard let percent = number(config["creditUsagePercent"])?.doubleValue else {
+                throw IntegrationError.invalidResponse("xAI returned an invalid usage percentage.")
+            }
+            used = percent.clampedPercent
+        } else {
+            used = 0
+        }
+        let type = (period?["type"] as? String)?.uppercased() ?? ""
+        let cadence: UsageCadence = type.contains("WEEK") ? .weekly : type.contains("MONTH") ? .monthly : type.contains("DAY") ? .daily : .weekly
+        return ProviderUsage(
+            id: IntegrationID.xai.rawValue,
+            integration: .xai,
+            name: IntegrationID.xai.name,
+            accountLabel: nil,
+            plan: "SuperGrok",
+            sourceLabel: "xAI Grok credits API",
+            limits: [ProviderLimit(
+                cadence: cadence,
+                label: nil,
+                usedPercent: used,
+                resetAt: dateValue(period?["end"] ?? config["billingPeriodEnd"])
+            )],
+            resetCredits: nil
+        )
     }
 
     func parseGitHubCopilot(_ data: Data) throws -> ProviderUsage {
@@ -1027,6 +1253,12 @@ private func number(_ value: Any?) -> NSNumber? {
     if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite { return number }
     if let string = value as? String, let double = Double(string), double.isFinite { return NSNumber(value: double) }
     return nil
+}
+
+private func nonEmptyString(_ value: Any?) -> String? {
+    guard let string = value as? String else { return nil }
+    let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
 }
 
 private func fingerprint(_ value: String) -> String {

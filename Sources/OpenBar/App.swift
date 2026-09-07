@@ -62,6 +62,7 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.store.refresh() }
         }
+        settings.importCompatibleOpenCodeAccounts()
         store.setAccounts(settings.enabledAccounts)
         Task {
             if ProcessInfo.processInfo.arguments.contains("--import-google-oauth-clients") {

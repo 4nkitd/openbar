@@ -24,6 +24,7 @@ final class SettingsStore {
         static let launchAtLogin = "launchAtLogin"
         static let didSetLaunchAtLoginDefault = "didSetLaunchAtLoginDefault"
         static let accounts = "integrationAccounts"
+        static let importedOpenCodeV2 = "importedOpenCodeV2"
 
         static func integration(_ id: IntegrationID) -> String {
             "integration.\(id.rawValue).enabled"
@@ -54,7 +55,8 @@ final class SettingsStore {
             Key.integration(.claude): false,
             Key.integration(.openCodeGo): false,
             Key.integration(.githubCopilot): false,
-            Key.integration(.antigravity): false
+            Key.integration(.antigravity): false,
+            Key.integration(.xai): false
         ])
     }
 
@@ -129,6 +131,33 @@ final class SettingsStore {
 
     var enabledAccounts: [IntegrationAccount] {
         accounts.filter { $0.isEnabled && isIntegrationEnabled($0.integration) }
+    }
+
+    static func importedOpenCodeAccounts(existing: [IntegrationAccount], available: Set<IntegrationID>, alreadyImported: Set<IntegrationID> = []) -> (accounts: [IntegrationAccount], enable: [IntegrationID]) {
+        var accounts = existing
+        var enable: [IntegrationID] = []
+        for id in IntegrationID.allCases where available.contains(id) {
+            let matches = accounts.filter { $0.integration == id }
+            if matches.isEmpty {
+                accounts.append(.current(id))
+                enable.append(id)
+            } else if !alreadyImported.contains(id), matches.allSatisfy({ $0.source == .automatic }) {
+                enable.append(id)
+            }
+        }
+        return (accounts, enable)
+    }
+
+    func importCompatibleOpenCodeAccounts() {
+        let available = Set(IntegrationID.allCases.filter(CredentialStore.hasOpenCodeV2Credential(for:)))
+        let already = Set((defaults.stringArray(forKey: Key.importedOpenCodeV2) ?? []).compactMap(IntegrationID.init(rawValue:)))
+        let imported = Self.importedOpenCodeAccounts(existing: accounts, available: available, alreadyImported: already)
+        for id in imported.enable { setIntegration(id, enabled: true) }
+        if imported.accounts != accounts { accounts = imported.accounts }
+        let recorded = already.union(imported.enable)
+        if recorded != already {
+            defaults.set(recorded.map(\.rawValue).sorted(), forKey: Key.importedOpenCodeV2)
+        }
     }
 
     func isIntegrationEnabled(_ id: IntegrationID) -> Bool {

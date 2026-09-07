@@ -8,12 +8,13 @@ FILES=()
 for file in "$ROOT"/Sources/OpenBar/*.swift; do
     [[ "$file" == */App.swift ]] || FILES+=("$file")
 done
-swiftc -parse-as-library -warnings-as-errors "${FILES[@]}" "$ROOT/Tests/RegressionChecks.swift" -o "$OUT/Checks.app/Contents/MacOS/Checks"
+swiftc -parse-as-library -warnings-as-errors -lsqlite3 "${FILES[@]}" "$ROOT/Tests/RegressionChecks.swift" -o "$OUT/Checks.app/Contents/MacOS/Checks"
 cp "$ROOT/assets/providers/claude.svg" "$OUT/Checks.app/Contents/Resources/ProviderClaude.svg"
 cp "$ROOT/assets/providers/codex.pdf" "$OUT/Checks.app/Contents/Resources/ProviderCodex.pdf"
 cp "$ROOT/assets/providers/opencode.svg" "$OUT/Checks.app/Contents/Resources/ProviderOpenCode.svg"
 cp "$ROOT/assets/providers/copilot.pdf" "$OUT/Checks.app/Contents/Resources/ProviderCopilot.pdf"
 cp "$ROOT/assets/providers/antigravity.png" "$OUT/Checks.app/Contents/Resources/ProviderAntigravity.png"
+cp "$ROOT/assets/providers/xai.svg" "$OUT/Checks.app/Contents/Resources/ProviderXAI.svg"
 "$OUT/Checks.app/Contents/MacOS/Checks" "$OUT" | tee "$OUT/checks.log"
 grep -q '^ALL CHECKS PASSED$' "$OUT/checks.log"
 echo "Screenshots and test cache: $OUT"

@@ -25,10 +25,11 @@ enum AppBranding {
         case .openCodeGo: resource = ("ProviderOpenCode", "svg")
         case .githubCopilot: resource = ("ProviderCopilot", "pdf")
         case .antigravity: resource = ("ProviderAntigravity", "png")
+        case .xai: resource = ("ProviderXAI", "svg")
         }
         guard let url = Bundle.main.url(forResource: resource.0, withExtension: resource.1) else { return nil }
         let image = NSImage(contentsOf: url)
-        if integration == .codex || integration == .githubCopilot { image?.isTemplate = true }
+        if integration == .codex || integration == .githubCopilot || integration == .xai { image?.isTemplate = true }
         return image
     }
 
@@ -45,6 +46,12 @@ enum AppBranding {
             return NSColor(srgbRed: 0x58 / 255.0, green: 0xA6 / 255.0, blue: 0xFF / 255.0, alpha: 1)
         case .antigravity:
             return NSColor(srgbRed: 0x42 / 255.0, green: 0x85 / 255.0, blue: 0xF4 / 255.0, alpha: 1)
+        case .xai:
+            return NSColor(name: nil) { appearance in
+                appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                    ? NSColor(srgbRed: 0.92, green: 0.92, blue: 0.92, alpha: 1)
+                    : NSColor(srgbRed: 0.12, green: 0.12, blue: 0.12, alpha: 1)
+            }
         }
     }
 
