@@ -318,6 +318,19 @@ private struct RegressionChecks {
         try check(!visibleStrings.contains(where: { $0.contains("Last success") || $0.contains("Saved usage") }), "Do not show fetch-age prose in the popover")
         window.setContentSize(controller.preferredContentSize)
         try snapshot(controller.view, to: output.appendingPathComponent("popover-error.png"))
+        let compactProviders = [49.0, 2, 98, 0, 100].enumerated().map { index, used in
+            ProviderUsage(id: "compact-\(index)", integration: .codex, name: "Codex", accountLabel: index == 1 ? "An unusually long account name that needs truncation" : "Codex Account \(index + 2)",
+                          plan: "Pro", sourceLabel: "UI fixture",
+                          limits: [ProviderLimit(cadence: .weekly, label: nil, usedPercent: used, resetAt: Date().addingTimeInterval(414_000))],
+                          resetCredits: ResetCredits(availableCount: 2, applicableAvailableCount: 2))
+        }
+        controller.update(states: [.codex: IntegrationState(providers: compactProviders, updatedAt: Date())], enabled: [.codex], displayMode: .used)
+        window.setContentSize(controller.preferredContentSize)
+        window.contentView?.layoutSubtreeIfNeeded()
+        window.appearance = NSAppearance(named: .darkAqua)
+        try snapshot(controller.view, to: output.appendingPathComponent("popover-compact-dark.png"))
+        window.appearance = NSAppearance(named: .aqua)
+        try snapshot(controller.view, to: output.appendingPathComponent("popover-compact-light.png"))
         controller.update(states: [:], enabled: [], displayMode: .used)
         window.setContentSize(controller.preferredContentSize)
         try snapshot(controller.view, to: output.appendingPathComponent("popover-empty.png"))
