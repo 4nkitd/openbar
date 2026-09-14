@@ -17,7 +17,7 @@ brew install --cask 4nkitd/tap/openbar
 open -a OpenBar
 ```
 
-Or download [OpenBar v0.1.4](https://github.com/4nkitd/openbar/releases/download/v0.1.4/OpenBar-0.1.4-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
+Or download [OpenBar v0.1.5](https://github.com/4nkitd/openbar/releases/download/v0.1.5/OpenBar-0.1.5-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
 
 This release is ad-hoc signed and is not notarized. If Gatekeeper blocks the app, review the download source and allow it under **System Settings → Privacy & Security → Open Anyway**. Homebrew updates are available through `brew upgrade --cask 4nkitd/tap/openbar`.
 
@@ -31,7 +31,7 @@ Quit Headroom and disable its launch-at-login setting before switching. If you u
 
 - OpenAI Codex, Claude Code, OpenCode Go, GitHub Copilot, Google Antigravity and xAI Grok.
 - Multiple named accounts per integration, with independent credentials, refresh state, cached readings and enable/disable switches.
-- A compact progress bar for each account's most-constrained quota. Expand a provider to see every window and reset time.
+- Rounded, provider-colored bars with account names, percentages, reset countdowns and applicable Codex reset credits. Expand a provider to see every quota window.
 - A menu-bar summary of the most-constrained enabled account, with the account named in its tooltip.
 - Used or remaining percentages, light/dark appearance, scrollable expanded details and keyboard controls.
 - Notifications at 80%, 90%, exhaustion and quota reset. Stale cache values do not trigger alerts.
