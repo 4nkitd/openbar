@@ -66,6 +66,8 @@ final class QuotaStore {
     private(set) var accounts: [IntegrationAccount] = []
     var onChange: (() -> Void)?
     var onFresh: (([ProviderUsage]) -> Void)?
+    var onFailure: ((IntegrationAccount, Error) -> Void)?
+    var onRecovered: ((IntegrationAccount) -> Void)?
     private var tasks: [String: Task<Void, Never>] = [:]
     private var generations: [String: UUID] = [:]
     private let fetch: (IntegrationAccount) async throws -> [ProviderUsage]
@@ -173,6 +175,7 @@ final class QuotaStore {
             // Manual refreshes also observe a minimum interval to avoid burning API quota.
             state.retryAt = now.addingTimeInterval(account.integration == .claude ? 300 : 60)
             onFresh?(providers)
+            onRecovered?(account)
         case .failure(let error):
             state.failureCount = min(6, state.failureCount + 1)
             state.message = error.localizedDescription
@@ -183,6 +186,7 @@ final class QuotaStore {
                 state.updatedAt = now
                 onFresh?(providers)
             }
+            onFailure?(account, error)
         }
         states[id] = state
         if case .success = result { persist() }

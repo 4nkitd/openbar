@@ -44,6 +44,8 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         controller.onUseResetCredit = { [weak self] id in self?.useResetCredit(accountID: id) }
         store.onChange = { [weak self] in self?.render() }
         store.onFresh = { [weak self] in self?.notifications.evaluate($0) }
+        store.onFailure = { [weak self] account, error in self?.notifications.evaluateFailure(error, account: account) }
+        store.onRecovered = { [weak self] account in self?.notifications.clearFailure(for: account) }
         settings.applyLaunchAtLoginDefaultIfNeeded()
         if ProcessInfo.processInfo.arguments.contains("--enable-launch-at-login"), Bundle.main.bundleURL.pathExtension == "app" {
             do {

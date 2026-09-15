@@ -17,7 +17,7 @@ brew install --cask 4nkitd/tap/openbar
 open -a OpenBar
 ```
 
-Or download [OpenBar v0.1.5](https://github.com/4nkitd/openbar/releases/download/v0.1.5/OpenBar-0.1.5-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
+Or download [OpenBar v0.1.6](https://github.com/4nkitd/openbar/releases/download/v0.1.6/OpenBar-0.1.6-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
 
 This release is ad-hoc signed and is not notarized. If Gatekeeper blocks the app, review the download source and allow it under **System Settings → Privacy & Security → Open Anyway**. Homebrew updates are available through `brew upgrade --cask 4nkitd/tap/openbar`.
 
@@ -59,9 +59,9 @@ GitHub's unofficial quota endpoint does not accept every personal access token. 
 
 ### Antigravity OAuth setup
 
-Google OAuth client secrets are **not embedded in the app or repository**. OpenBar can use a valid access token from an existing login. Refreshing an expired token needs the OAuth client belonging to that login.
+Google OAuth client secrets are **not embedded in the app or repository**. OpenBar reuses Antigravity credentials from the OpenCode account store and can discover the matching local `agy-auth.js` client configuration. Refreshing an expired token runs locally, even when OpenCode is not running.
 
-Choose **Integrations → Antigravity → Configure OAuth…** and save the appropriate Antigravity or Gemini client ID and client secret. These values stay in the macOS Keychain. They are not provider account tokens and cannot replace an account's existing sign-in.
+Choose **Integrations → Antigravity → Configure OAuth…** only when the local OpenCode client configuration is unavailable. Saved values stay in the macOS Keychain. They are not provider account tokens and cannot replace an account's existing sign-in.
 
 Alternatively, supply `ANTIGRAVITY_OAUTH_CLIENT_ID` / `ANTIGRAVITY_OAUTH_CLIENT_SECRET`, or `GEMINI_OAUTH_CLIENT_ID` / `GEMINI_OAUTH_CLIENT_SECRET`, in the app's process environment. Finder-launched apps do not inherit terminal environment variables. Never commit these values.
 
@@ -76,7 +76,7 @@ All quota collection uses in-process HTTP requests to the issuing provider. Ther
 - Google OAuth client configuration uses the separate `in.4nkitd.openbar.oauth` Keychain service.
 - Quota snapshots live in `~/Library/Application Support/OpenBar/accounts-v1.json`, written atomically with mode `0600` and a separate success timestamp per configured account.
 - Existing preferences and `CodexBarLite/quotas-v2.json` readings are copied on first launch without deleting the original data. Launch-at-login registration is tied to the new app bundle; check the switch after installing OpenBar.
-- Codex token refresh updates only the selected account's auth file and preserves unrelated JSON fields. Claude refresh caches are scoped to their configured account and source sign-in. xAI credentials are read-only; OpenBar does not refresh or rewrite OpenCode or Grok login files. Reconnect in OpenCode or with `grok login` if the token has expired.
+- Codex token refresh updates only the selected account's auth file and preserves unrelated JSON fields. Claude refresh caches are scoped to their configured account and source sign-in. xAI OAuth refresh is reactive: after an authentication failure, OpenBar refreshes once, retries the quota request, and persists a rotated credential pair to the selected JSON or OpenCode database source when writable.
 
 Background Keychain reads do not show authorization dialogs or wait for permission. If an older sign-in is protected by another app's access controls, use that account's existing credential file or explicitly allow OpenBar in Keychain Access. A readable account can continue refreshing while another sign-in is inaccessible.
 

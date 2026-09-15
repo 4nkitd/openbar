@@ -74,6 +74,48 @@ private final class XaiHTTPProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+private final class XaiRefreshHTTPProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let isRefresh = request.url?.host == "auth.x.ai" && request.url?.path == "/oauth2/token"
+        let authorized = request.url?.host == "cli-chat-proxy.grok.com"
+            && request.value(forHTTPHeaderField: "Authorization") == "Bearer refreshed-xai-token"
+        let response = HTTPURLResponse(url: request.url!, statusCode: isRefresh || authorized ? 200 : 401, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+        let body = isRefresh
+            ? json(#"{"access_token":"refreshed-xai-token","refresh_token":"rotated-refresh","expires_in":10800}"#)
+            : json(#"{"config":{"creditUsagePercent":19,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","end":"2026-07-14T10:46:52Z"}}}"#)
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+private final class AntigravityRefreshHTTPProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let isToken = request.url?.host == "oauth2.googleapis.com" && request.url?.path == "/token"
+        let isQuota = request.url?.host?.contains("cloudcode-pa") == true
+            && request.url?.host?.hasSuffix("googleapis.com") == true
+            && request.value(forHTTPHeaderField: "Authorization") == "Bearer refreshed-google-token"
+        let response = HTTPURLResponse(url: request.url!, statusCode: isToken || isQuota ? 200 : 401, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+        let body: Data
+        if isToken {
+            body = json(#"{"access_token":"refreshed-google-token","refresh_token":"rotated-google-refresh","expires_in":10800}"#)
+        } else if request.url?.absoluteString.contains("loadCodeAssist") == true {
+            body = json(#"{"currentTier":{"name":"Pro"},"cloudaicompanionProject":"fixture-project"}"#)
+        } else {
+            body = json(#"{"groups":[{"displayName":"Gemini Models","buckets":[{"window":"5h","remainingFraction":0.88}]}]}"#)
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
 @main
 private struct RegressionChecks {
     @MainActor static func main() async throws {
@@ -154,10 +196,24 @@ private struct RegressionChecks {
         print("PASS response parsers, malformed data, auth metadata preservation")
         let clients = try GoogleOAuthClient.fromEnvironment(["ANTIGRAVITY_OAUTH_CLIENT_ID": "fixture-id", "ANTIGRAVITY_OAUTH_CLIENT_SECRET": "fixture-secret"])
         try check(clients.count == 1 && clients[0].0 == "antigravity", "Local OAuth setup validates a complete client pair")
+        let pluginClients = CredentialStore.parseGoogleOAuthClients(#"var ANTIGRAVITY_CLIENT_ID = "plugin-id"; var ANTIGRAVITY_CLIENT_SECRET = "plugin-secret";"#)
+        try check(pluginClients.count == 1 && pluginClients[0].0 == "antigravity" && pluginClients[0].1.clientID == "plugin-id", "Antigravity plugin OAuth client discovery")
         do {
             _ = try GoogleOAuthClient.fromEnvironment(["GEMINI_OAUTH_CLIENT_ID": "fixture-id"])
             throw CheckFailure(description: "Incomplete client pair accepted")
         } catch IntegrationError.notConfigured {}
+
+        let antigravityPath = output.appendingPathComponent("antigravity-refresh.json")
+        try writePrivateData(json(#"{"accounts":[{"email":"agy@example.test","refreshToken":"old-google-refresh"}]}"#), to: antigravityPath)
+        let antigravityAccount = IntegrationAccount(id: "antigravity-refresh", integration: .antigravity, label: "Antigravity", source: .file, credentialPath: antigravityPath.path, isEnabled: true)
+        let antigravityConfiguration = URLSessionConfiguration.ephemeral
+        antigravityConfiguration.protocolClasses = [AntigravityRefreshHTTPProtocol.self]
+        let antigravityService = IntegrationService(configuration: antigravityConfiguration, environment: ["ANTIGRAVITY_OAUTH_CLIENT_ID": "fixture-id", "ANTIGRAVITY_OAUTH_CLIENT_SECRET": "fixture-secret"])
+        let antigravityUsage = try await antigravityService.fetch(antigravityAccount)
+        try check(antigravityUsage[0].primary.remainingPercent == 88, "Antigravity refreshes OAuth before quota collection")
+        let refreshedAntigravity = try JSONSerialization.jsonObject(with: Data(contentsOf: antigravityPath)) as! [String: Any]
+        let refreshedAntigravityAccount = (refreshedAntigravity["accounts"] as! [[String: Any]])[0]
+        try check(refreshedAntigravityAccount["refreshToken"] as? String == "rotated-google-refresh", "Antigravity persists rotated OAuth credentials")
 
         let probe = FetchProbe()
         let codexAccount = IntegrationAccount.current(.codex)
@@ -218,6 +274,22 @@ private struct RegressionChecks {
         let xaiService = IntegrationService(configuration: xaiConfiguration)
         let xaiUsage = try await xaiService.fetch(xaiAccount)
         try check(xaiUsage[0].primary.usedPercent == 42 && xaiUsage[0].configurationID == xaiAccount.id, "xAI HTTP must use the selected auth file")
+        let xaiRefreshPath = output.appendingPathComponent("xai-refresh.json")
+        try writePrivateData(json(#"{"xai":{"type":"oauth","access":"expired-xai-token","refresh":"old-refresh"}}"#), to: xaiRefreshPath)
+        let xaiRefreshAccount = IntegrationAccount(id: "xai-refresh", integration: .xai, label: "Refresh", source: .file, credentialPath: xaiRefreshPath.path, isEnabled: true)
+        let xaiRefreshConfiguration = URLSessionConfiguration.ephemeral
+        xaiRefreshConfiguration.protocolClasses = [XaiRefreshHTTPProtocol.self]
+        let xaiRefreshService = IntegrationService(configuration: xaiRefreshConfiguration)
+        let refreshedXaiUsage = try await xaiRefreshService.fetch(xaiRefreshAccount)
+        try check(refreshedXaiUsage[0].primary.usedPercent == 19, "xAI retries quota after refreshing OAuth credentials")
+        let refreshedXai = try JSONSerialization.jsonObject(with: Data(contentsOf: xaiRefreshPath)) as! [String: Any]
+        let refreshedXaiEntry = refreshedXai["xai"] as! [String: Any]
+        try check(refreshedXaiEntry["access"] as? String == "refreshed-xai-token" && refreshedXaiEntry["refresh"] as? String == "rotated-refresh", "xAI persists rotated OAuth credentials")
+        let xaiRefreshDB = output.appendingPathComponent("xai-refresh.db")
+        try writeOpenCodeCredentialDB(to: xaiRefreshDB, integration: "xai", value: #"{"type":"oauth","access":"expired-xai-token","refresh":"old-refresh"}"#)
+        let xaiRefreshDBAccount = IntegrationAccount(id: "xai-refresh-db", integration: .xai, label: "Refresh DB", source: .file, credentialPath: xaiRefreshDB.path, isEnabled: true)
+        let refreshedXaiDBUsage = try await xaiRefreshService.fetch(xaiRefreshDBAccount)
+        try check(refreshedXaiDBUsage[0].primary.usedPercent == 19 && CredentialStore.parseXaiAccessToken(at: xaiRefreshDB) == "refreshed-xai-token", "xAI persists rotated credentials to OpenCode V2")
         let xaiGoOnly = output.appendingPathComponent("opencode-go-only.json")
         try writePrivateData(json(#"{"opencode-go":{"type":"api","key":"go-key"}}"#), to: xaiGoOnly)
         let xaiWrongFile = IntegrationAccount(id: "xai-wrong", integration: .xai, label: "Wrong file", source: .file, credentialPath: xaiGoOnly.path, isEnabled: true)

@@ -32,6 +32,22 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    func evaluateFailure(_ error: Error, account: IntegrationAccount) {
+        guard Bundle.main.bundleURL.pathExtension == "app", settings.notificationsEnabled else { return }
+        let key = "notificationFailure.\(account.id)"
+        guard !defaults.bool(forKey: key) else { return }
+        defaults.set(true, forKey: key)
+        send(
+            title: "\(account.integration.name) needs attention",
+            body: "\(account.label): \(error.localizedDescription)",
+            id: key
+        )
+    }
+
+    func clearFailure(for account: IntegrationAccount) {
+        defaults.removeObject(forKey: "notificationFailure.\(account.id)")
+    }
+
     private func evaluate(_ window: ProviderLimit, provider: String, key: String) {
         let stateKey = "notificationState.\(key)"
         let previous = defaults.data(forKey: stateKey).flatMap { try? JSONDecoder().decode(WindowState.self, from: $0) }

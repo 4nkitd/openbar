@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.6
+
+- Reactive xAI OAuth refresh after authentication failures, including rotated refresh-token persistence for OpenCode V2, OpenCode V1 and Grok credential stores.
+- Antigravity refresh now reuses OpenCode Google credentials and local `agy-auth.js` OAuth client configuration without requiring OpenCode to be running.
+- Antigravity and xAI retain last-good quota data after refresh failures and report provider failures through native notifications.
+- Added regression coverage for both provider refresh and rotated credential persistence.
+
 ## 0.1.4
 
 - xAI Grok SuperGrok quota via existing OpenCode xAI OAuth or `grok login` credential files. Read-only HTTP to Grok's credits API; inference API keys and browser cookies are not used.

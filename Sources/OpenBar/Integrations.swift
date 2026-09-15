@@ -258,7 +258,7 @@ enum CredentialStore {
     static func antigravityAccounts(for account: IntegrationAccount) -> [GoogleCredentials] {
         if account.source == .file {
             guard let url = account.credentialURL, let value = jsonObject(at: url) else { return [] }
-            return parseGoogleAccounts(value)
+            return parseGoogleAccounts(value, location: .json(url))
         }
         var accounts: [GoogleCredentials] = []
         var seen = Set<String>()
@@ -270,8 +270,18 @@ enum CredentialStore {
                 accounts.append(GoogleCredentials(
                     label: value["email"] as? String ?? "Account \(fingerprint(refresh).prefix(6))",
                     refreshToken: refresh,
-                    accessToken: token["access_token"] as? String
+                    accessToken: token["access_token"] as? String,
+                    expiresAt: dateValue(token["expiry"] ?? token["expires_at"] ?? token["expires"]),
+                    location: .keychain,
+                    sourceRefreshToken: refresh
                 ))
+            }
+        }
+        for url in openCodeDatabaseURLs() {
+            guard let value = openCodeV2Value(provider: "google", database: url),
+                  let credentials = parseGoogleCredential(value, location: .sqlite(url)) else { continue }
+            if seen.insert(credentials.refreshToken.isEmpty ? credentials.accessToken ?? "" : credentials.refreshToken).inserted {
+                accounts.append(credentials)
             }
         }
         let paths = [
@@ -286,7 +296,10 @@ enum CredentialStore {
                 accounts.append(GoogleCredentials(
                     label: value["email"] as? String ?? "Account \(fingerprint(refresh).prefix(6))",
                     refreshToken: refresh,
-                    accessToken: value["accessToken"] as? String
+                    accessToken: value["accessToken"] as? String,
+                    expiresAt: dateValue(value["expiresAt"] ?? value["expires_at"] ?? value["expires"]),
+                    location: .json(path),
+                    sourceRefreshToken: refresh
                 ))
             }
         }
@@ -294,13 +307,13 @@ enum CredentialStore {
         if let raw = try? String(contentsOf: tokenFile, encoding: .utf8) {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty, seen.insert(trimmed).inserted {
-                accounts.append(GoogleCredentials(label: "Antigravity CLI", refreshToken: trimmed, accessToken: nil))
+                accounts.append(GoogleCredentials(label: "Antigravity CLI", refreshToken: trimmed, accessToken: nil, expiresAt: nil, location: .unavailable, sourceRefreshToken: trimmed))
             }
         }
         return accounts
     }
 
-    static func parseGoogleAccounts(_ value: [String: Any]) -> [GoogleCredentials] {
+    static func parseGoogleAccounts(_ value: [String: Any], location: GoogleCredentialLocation = .unavailable) -> [GoogleCredentials] {
         let values = value["accounts"] as? [[String: Any]] ?? [value]
         var seen = Set<String>()
         return values.compactMap { item in
@@ -308,15 +321,134 @@ enum CredentialStore {
             let refresh = token["refresh_token"] as? String ?? token["refreshToken"] as? String ?? ""
             let access = token["access_token"] as? String ?? token["accessToken"] as? String
             guard !refresh.isEmpty || access?.isEmpty == false, seen.insert(refresh.isEmpty ? access! : refresh).inserted else { return nil }
-            return GoogleCredentials(label: item["email"] as? String ?? "Account \(fingerprint(refresh.isEmpty ? access! : refresh).prefix(6))", refreshToken: refresh, accessToken: access)
+            return GoogleCredentials(
+                label: item["email"] as? String ?? "Account \(fingerprint(refresh.isEmpty ? access! : refresh).prefix(6))",
+                refreshToken: refresh,
+                accessToken: access,
+                expiresAt: dateValue(token["expiry"] ?? token["expires_at"] ?? token["expires"]),
+                location: location,
+                sourceRefreshToken: refresh
+            )
         }
     }
 
-    static func googleOAuthClients() -> [GoogleOAuthClient] {
-        ["antigravity", "gemini"].compactMap { account in
-            guard let value = readKeychain(service: googleOAuthService, account: "client.\(account)"), let data = value.data(using: .utf8) else { return nil }
-            return try? JSONDecoder().decode(GoogleOAuthClient.self, from: data)
+    private static func parseGoogleCredential(_ value: [String: Any], location: GoogleCredentialLocation) -> GoogleCredentials? {
+        let access = nonEmptyString(value["access"] ?? value["access_token"])
+        let refresh = nonEmptyString(value["refresh"] ?? value["refresh_token"]) ?? ""
+        guard access != nil || !refresh.isEmpty else { return nil }
+        let metadata = value["metadata"] as? [String: Any]
+        return GoogleCredentials(
+            label: nonEmptyString(metadata?["email"]) ?? "Current login",
+            refreshToken: refresh,
+            accessToken: access,
+            expiresAt: dateValue(value["expires"] ?? value["expires_at"] ?? value["expiry"]),
+            location: location,
+            sourceRefreshToken: refresh
+        )
+    }
+
+    static func saveGoogleCredentials(_ credentials: GoogleCredentials) throws {
+        switch credentials.location {
+        case .keychain:
+            guard let raw = readKeychain(service: "gemini", account: "antigravity"),
+                  var object = decodeKeychainJSON(raw), updateGoogleObject(&object, credentials: credentials) else {
+                throw IntegrationError.notConfigured("Antigravity credential entry could not be read.")
+            }
+            guard let data = try? JSONSerialization.data(withJSONObject: object), let json = String(data: data, encoding: .utf8) else {
+                throw IntegrationError.invalidResponse("Antigravity credentials could not be encoded.")
+            }
+            let value = raw.hasPrefix("go-keyring-base64:") ? "go-keyring-base64:" + Data(json.utf8).base64EncodedString() : json
+            try writeKeychain(value, service: "gemini", account: "antigravity")
+        case .json(let url):
+            guard var object = jsonObject(at: url), updateGoogleObject(&object, credentials: credentials) else {
+                throw IntegrationError.notConfigured("Antigravity credential entry could not be read.")
+            }
+            try writeJSON(object, to: url)
+        case .sqlite(let url):
+            try updateGoogleDatabase(credentials, database: url)
+        case .unavailable:
+            break
         }
+    }
+
+    private static func updateGoogleObject(_ object: inout [String: Any], credentials: GoogleCredentials) -> Bool {
+        let update: (inout [String: Any]) -> Bool = { item in
+            let tokenKey = item["token"] is [String: Any] ? "token" : nil
+            var token = tokenKey.flatMap { item[$0] as? [String: Any] } ?? item
+            let currentRefresh = token["refresh_token"] as? String ?? token["refreshToken"] as? String
+            let currentAccess = token["access_token"] as? String ?? token["accessToken"] as? String
+            let sourceRefresh = credentials.sourceRefreshToken ?? credentials.refreshToken
+            guard currentRefresh == sourceRefresh || currentAccess == credentials.accessToken else { return false }
+            if token["refresh_token"] != nil || token["access_token"] != nil {
+                token["refresh_token"] = credentials.refreshToken
+                token["access_token"] = credentials.accessToken
+                if let expiry = credentials.expiresAt { token["expiry"] = ISO8601DateFormatter().string(from: expiry) }
+            } else {
+                token["refreshToken"] = credentials.refreshToken
+                token["accessToken"] = credentials.accessToken
+                if let expiry = credentials.expiresAt { token["expiresAt"] = Int64(expiry.timeIntervalSince1970 * 1000) }
+            }
+            if let tokenKey { item[tokenKey] = token } else { item = token }
+            return true
+        }
+        if var values = object["accounts"] as? [[String: Any]] {
+            for index in values.indices {
+                if update(&values[index]) {
+                    object["accounts"] = values
+                    return true
+                }
+            }
+            return false
+        }
+        return update(&object)
+    }
+
+    static func googleOAuthClients() -> [GoogleOAuthClient] {
+        var clients: [(String, GoogleOAuthClient)] = []
+        var seen = Set<String>()
+        for kind in ["antigravity", "gemini"] {
+            guard let value = readKeychain(service: googleOAuthService, account: "client.\(kind)"),
+                  let data = value.data(using: .utf8),
+                  let client = try? JSONDecoder().decode(GoogleOAuthClient.self, from: data) else { continue }
+            clients.append((kind, client))
+            seen.insert(kind)
+        }
+        for url in googleOAuthPluginURLs() {
+            guard let source = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            for (kind, client) in parseGoogleOAuthClients(source) where !seen.contains(kind) {
+                clients.append((kind, client))
+                seen.insert(kind)
+            }
+        }
+        return clients.map { $0.1 }
+    }
+
+    static func parseGoogleOAuthClients(_ source: String) -> [(String, GoogleOAuthClient)] {
+        let definitions = [
+            ("antigravity", "ANTIGRAVITY_CLIENT_ID", "ANTIGRAVITY_CLIENT_SECRET"),
+            ("gemini", "GEMINI_CLI_CLIENT_ID", "GEMINI_CLI_CLIENT_SECRET")
+        ]
+        return definitions.compactMap { kind, idName, secretName in
+            guard let id = pluginValue(idName, source: source), let secret = pluginValue(secretName, source: source) else { return nil }
+            return (kind, GoogleOAuthClient(clientID: id, clientSecret: secret))
+        }
+    }
+
+    private static func pluginValue(_ name: String, source: String) -> String? {
+        let escaped = NSRegularExpression.escapedPattern(for: name)
+        let pattern = "(?:var|let|const)\\s+\(escaped)\\s*=\\s*[\\\"']([^\\\"']+)[\\\"']"
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)),
+              let range = Range(match.range(at: 1), in: source) else { return nil }
+        return String(source[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func googleOAuthPluginURLs() -> [URL] {
+        [
+            home(".config/opencode/plugins/agy-auth.js"),
+            home(".local/share/opencode/plugins/agy-auth.js"),
+            home("Library/Application Support/opencode/plugins/agy-auth.js")
+        ]
     }
 
     static func saveGoogleOAuthClient(_ client: GoogleOAuthClient, kind: String) throws {
@@ -369,9 +501,17 @@ enum CredentialStore {
     }
 
     static func xaiAccessToken(for account: IntegrationAccount) -> String? {
+        xaiCredentials(for: account)?.accessToken
+    }
+
+    static func xaiCredentials(for account: IntegrationAccount) -> XaiCredentials? {
         if account.source == .file {
             guard let url = account.credentialURL else { return nil }
-            return parseXaiAccessToken(at: url)
+            if isSQLite(url), let value = openCodeV2Value(provider: "xai", database: url) {
+                return parseXaiCredentials(value, location: .sqlite(url))
+            }
+            guard let object = jsonObject(at: url) else { return nil }
+            return parseXaiCredentials(object, location: .json(url, key: nil))
         }
         let paths = openCodeDatabaseURLs() + [
             home(".local/share/opencode/auth.json"),
@@ -379,9 +519,167 @@ enum CredentialStore {
             home(".grok/auth.json")
         ]
         for path in paths {
-            if let token = parseXaiAccessToken(at: path) { return token }
+            if isSQLite(path), let value = openCodeV2Value(provider: "xai", database: path),
+               let credentials = parseXaiCredentials(value, location: .sqlite(path)) { return credentials }
+            guard let object = jsonObject(at: path) else { continue }
+            if path.path.hasSuffix("/.grok/auth.json"),
+               let credentials = parseGrokCredentials(object, location: .grokJSON(path, key: "")) { return credentials }
+            if let credentials = parseXaiCredentials(object, location: .json(path, key: "xai")) { return credentials }
         }
         return nil
+    }
+
+    static func saveXaiCredentials(_ credentials: XaiCredentials) throws {
+        switch credentials.location {
+        case .json(let url, let key):
+            guard var object = jsonObject(at: url) else { throw IntegrationError.notConfigured("xAI credential file could not be read.") }
+            var target: [String: Any]
+            if let key {
+                guard let nested = object[key] as? [String: Any] else { throw IntegrationError.notConfigured("xAI credential entry could not be read.") }
+                target = nested
+            } else {
+                target = object
+            }
+            updateXaiCredentialObject(&target, credentials: credentials)
+            if let key { object[key] = target } else { object = target }
+            try writeJSON(object, to: url)
+        case .grokJSON(let url, let key):
+            guard var object = jsonObject(at: url), var target = object[key] as? [String: Any] else {
+                throw IntegrationError.notConfigured("Grok credential entry could not be read.")
+            }
+            target["key"] = credentials.accessToken
+            target["refresh_token"] = credentials.refreshToken
+            if let expiresAt = credentials.expiresAt { target["expires_at"] = ISO8601DateFormatter().string(from: expiresAt) }
+            object[key] = target
+            try writeJSON(object, to: url)
+        case .sqlite(let url):
+            try updateOpenCodeV2Credential(credentials, database: url)
+        case .unavailable:
+            break
+        }
+    }
+
+    private static func parseXaiCredentials(_ object: [String: Any], location: XaiCredentialLocation) -> XaiCredentials? {
+        if let credentials = parseXaiCredentialObject(object, location: location) { return credentials }
+        for key in ["xai", "xai-oauth", "grok"] {
+            guard let entry = object[key] as? [String: Any] else { continue }
+            let entryLocation: XaiCredentialLocation
+            switch location {
+            case .json(let url, _): entryLocation = .json(url, key: key)
+            default: entryLocation = location
+            }
+            if let credentials = parseXaiCredentialObject(entry, location: entryLocation) { return credentials }
+        }
+        return parseGrokCredentials(object, location: location)
+    }
+
+    private static func parseGrokCredentials(_ object: [String: Any], location: XaiCredentialLocation) -> XaiCredentials? {
+        for (key, value) in object {
+            let isGrokScope = key.hasPrefix("https://auth.x.ai::") || key == "https://accounts.x.ai/sign-in" || key.contains("/sign-in")
+            guard isGrokScope, let entry = value as? [String: Any] else { continue }
+            let access = nonEmptyString(entry["key"] ?? entry["access_token"] ?? entry["access"]) ?? ""
+            let refresh = nonEmptyString(entry["refresh_token"] ?? entry["refresh"]) ?? ""
+            guard !access.isEmpty || !refresh.isEmpty else { continue }
+            let entryLocation: XaiCredentialLocation
+            switch location {
+            case .grokJSON(let url, _): entryLocation = .grokJSON(url, key: key)
+            case .json(let url, _): entryLocation = .grokJSON(url, key: key)
+            default: entryLocation = location
+            }
+            return XaiCredentials(accessToken: access, refreshToken: refresh,
+                                  expiresAt: dateValue(entry["expires_at"] ?? entry["expiresAt"] ?? entry["expires"]),
+                                  idToken: entry["id_token"] as? String ?? entry["idToken"] as? String,
+                                  location: entryLocation)
+        }
+        return nil
+    }
+
+    private static func parseXaiCredentialObject(_ object: [String: Any], location: XaiCredentialLocation) -> XaiCredentials? {
+        let type = (object["type"] as? String)?.lowercased()
+        guard type == nil || type == "oauth" else { return nil }
+        if type == "api" || type == "key" { return nil }
+        if type == nil && object["key"] != nil { return nil }
+        let access = nonEmptyString(object["access"] ?? object["access_token"] ?? object["key"]) ?? ""
+        let refresh = nonEmptyString(object["refresh"] ?? object["refresh_token"]) ?? ""
+        guard !access.isEmpty || !refresh.isEmpty else { return nil }
+        return XaiCredentials(
+            accessToken: access,
+            refreshToken: refresh,
+            expiresAt: dateValue(object["expires"] ?? object["expires_at"] ?? object["expiresAt"]),
+            idToken: object["id_token"] as? String ?? object["idToken"] as? String,
+            location: location
+        )
+    }
+
+    private static func updateXaiCredentialObject(_ object: inout [String: Any], credentials: XaiCredentials) {
+        object["access"] = credentials.accessToken
+        object["refresh"] = credentials.refreshToken
+        object["expires"] = credentials.expiresAt.map { Int64($0.timeIntervalSince1970 * 1000) } ?? 0
+        if let idToken = credentials.idToken { object["id_token"] = idToken }
+    }
+
+    private static func writeJSON(_ object: [String: Any], to url: URL) throws {
+        guard JSONSerialization.isValidJSONObject(object) else { throw IntegrationError.invalidResponse("Credential data could not be encoded.") }
+        try writePrivateData(JSONSerialization.data(withJSONObject: object), to: url)
+    }
+
+    private static func updateOpenCodeV2Credential(_ credentials: XaiCredentials, database url: URL) throws {
+        var db: OpaquePointer?
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+        guard sqlite3_open_v2(url.path, &db, flags, nil) == SQLITE_OK, let db else {
+            if db != nil { sqlite3_close(db) }
+            throw IntegrationError.notConfigured("OpenCode xAI credentials could not be opened for update.")
+        }
+        defer { sqlite3_close(db) }
+        var object: [String: Any] = [:]
+        guard let current = openCodeV2Value(provider: "xai", database: url) else {
+            throw IntegrationError.notConfigured("OpenCode xAI credentials could not be read for update.")
+        }
+        object = current
+        updateXaiCredentialObject(&object, credentials: credentials)
+        let raw = String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
+        let sql = "UPDATE credential SET value = ?, time_updated = ? WHERE id = (SELECT id FROM credential WHERE integration_id = ? ORDER BY CASE WHEN active = 1 THEN 0 ELSE 1 END, time_updated DESC LIMIT 1)"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw IntegrationError.notConfigured("OpenCode xAI credentials could not be prepared for update.")
+        }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, raw, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_int64(statement, 2, Int64(Date().timeIntervalSince1970 * 1000))
+        sqlite3_bind_text(statement, 3, "xai", -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        guard sqlite3_step(statement) == SQLITE_DONE, sqlite3_changes(db) > 0 else {
+            throw IntegrationError.notConfigured("OpenCode xAI credentials could not be updated.")
+        }
+    }
+
+    private static func updateGoogleDatabase(_ credentials: GoogleCredentials, database url: URL) throws {
+        var db: OpaquePointer?
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+        guard sqlite3_open_v2(url.path, &db, flags, nil) == SQLITE_OK, let db else {
+            if db != nil { sqlite3_close(db) }
+            throw IntegrationError.notConfigured("OpenCode Google credentials could not be opened for update.")
+        }
+        defer { sqlite3_close(db) }
+        guard let current = openCodeV2Value(provider: "google", database: url) else {
+            throw IntegrationError.notConfigured("OpenCode Google credentials could not be read for update.")
+        }
+        var updated = current
+        updated["access"] = credentials.accessToken
+        updated["refresh"] = credentials.refreshToken
+        if let expiry = credentials.expiresAt { updated["expires"] = Int64(expiry.timeIntervalSince1970 * 1000) }
+        let raw = String(decoding: try JSONSerialization.data(withJSONObject: updated), as: UTF8.self)
+        let sql = "UPDATE credential SET value = ?, time_updated = ? WHERE id = (SELECT id FROM credential WHERE integration_id = ? ORDER BY CASE WHEN active = 1 THEN 0 ELSE 1 END, time_updated DESC LIMIT 1)"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw IntegrationError.notConfigured("OpenCode Google credentials could not be prepared for update.")
+        }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, raw, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_int64(statement, 2, Int64(Date().timeIntervalSince1970 * 1000))
+        sqlite3_bind_text(statement, 3, "google", -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        guard sqlite3_step(statement) == SQLITE_DONE, sqlite3_changes(db) > 0 else {
+            throw IntegrationError.notConfigured("OpenCode Google credentials could not be updated.")
+        }
     }
 
     static func parseXaiAccessToken(at url: URL) -> String? {
@@ -588,8 +886,33 @@ struct OAuthCredentials {
 
 struct GoogleCredentials {
     let label: String
-    let refreshToken: String
-    let accessToken: String?
+    var refreshToken: String
+    var accessToken: String?
+    var expiresAt: Date?
+    let location: GoogleCredentialLocation
+    var sourceRefreshToken: String? = nil
+}
+
+enum GoogleCredentialLocation {
+    case keychain
+    case json(URL)
+    case sqlite(URL)
+    case unavailable
+}
+
+struct XaiCredentials {
+    var accessToken: String
+    var refreshToken: String
+    var expiresAt: Date?
+    var idToken: String?
+    let location: XaiCredentialLocation
+}
+
+enum XaiCredentialLocation {
+    case json(URL, key: String?)
+    case grokJSON(URL, key: String)
+    case sqlite(URL)
+    case unavailable
 }
 
 struct GoogleOAuthClient: Codable {
@@ -619,15 +942,20 @@ private final class NoCredentialRedirects: NSObject, URLSessionTaskDelegate {
 }
 
 actor IntegrationService {
+    private static let xaiClientID = "b1a00492-073a-47ea-816f-4c329264a828"
     private let session: URLSession
+    private let environment: [String: String]
     private var googleTokenCache: [String: (token: String, expiresAt: Date)] = [:]
+    private var googleRefreshTasks: [String: Task<GoogleCredentials, Error>] = [:]
+    private var xaiRefreshTasks: [String: Task<XaiCredentials, Error>] = [:]
 
-    init(configuration: URLSessionConfiguration = .ephemeral) {
+    init(configuration: URLSessionConfiguration = .ephemeral, environment: [String: String] = ProcessInfo.processInfo.environment) {
         configuration.httpShouldSetCookies = false
         configuration.timeoutIntervalForRequest = 20
         configuration.timeoutIntervalForResource = 30
         configuration.urlCache = nil
         session = URLSession(configuration: configuration, delegate: NoCredentialRedirects(), delegateQueue: nil)
+        self.environment = environment
     }
 
     func fetch(_ account: IntegrationAccount) async throws -> [ProviderUsage] {
@@ -845,7 +1173,7 @@ actor IntegrationService {
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.setValue("claude-cli/2.1.112 (external, sdk-cli)", forHTTPHeaderField: "User-Agent")
-        request.httpBody = formData([
+        request.httpBody = Self.formData([
             "grant_type": "refresh_token",
             "refresh_token": credentials.refreshToken,
             "client_id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
@@ -941,9 +1269,22 @@ actor IntegrationService {
     }
 
     private func fetchXai(account: IntegrationAccount) async throws -> ProviderUsage {
-        guard let token = CredentialStore.xaiAccessToken(for: account) else {
+        guard var credentials = CredentialStore.xaiCredentials(for: account) else {
             throw IntegrationError.notConfigured("xAI SuperGrok OAuth credentials were not found.")
         }
+        if credentials.accessToken.isEmpty {
+            credentials = try await refreshXai(credentials)
+        }
+        do {
+            return try await fetchXaiUsage(token: credentials.accessToken)
+        } catch {
+            guard isAuthenticationFailure(error) else { throw error }
+            credentials = try await refreshXai(credentials)
+            return try await fetchXaiUsage(token: credentials.accessToken)
+        }
+    }
+
+    private func fetchXaiUsage(token: String) async throws -> ProviderUsage {
         var request = URLRequest(url: URL(string: "https://cli-chat-proxy.grok.com/v1/billing?format=credits")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -954,6 +1295,49 @@ actor IntegrationService {
         let (data, response) = try await session.data(for: request)
         try validate(response, data: data, provider: "xAI")
         return try parseXai(data)
+    }
+
+    private func refreshXai(_ credentials: XaiCredentials) async throws -> XaiCredentials {
+        guard !credentials.refreshToken.isEmpty else { throw IntegrationError.notConfigured("xAI OAuth credentials expired. Sign in to xAI again.") }
+        let key = fingerprint(credentials.refreshToken)
+        if let task = xaiRefreshTasks[key] { return try await task.value }
+        let session = self.session
+        let task = Task { [session] in
+            var request = URLRequest(url: URL(string: "https://auth.x.ai/oauth2/token")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.httpBody = Self.formData([
+                "grant_type": "refresh_token",
+                "client_id": Self.xaiClientID,
+                "refresh_token": credentials.refreshToken
+            ])
+            let (data, response) = try await session.data(for: request)
+            try validate(response, data: data, provider: "xAI OAuth")
+            guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let access = nonEmptyString(value["access_token"]) else {
+                throw IntegrationError.invalidResponse("xAI OAuth returned invalid credentials.")
+            }
+            let expires = number(value["expires_in"])?.doubleValue
+            let expiresAt = expires.map { Date().addingTimeInterval($0) } ?? jwtExpiry(access) ?? Date().addingTimeInterval(3600)
+            return XaiCredentials(
+                accessToken: access,
+                refreshToken: nonEmptyString(value["refresh_token"]) ?? credentials.refreshToken,
+                expiresAt: expiresAt,
+                idToken: nonEmptyString(value["id_token"]) ?? credentials.idToken,
+                location: credentials.location
+            )
+        }
+        xaiRefreshTasks[key] = task
+        do {
+            let refreshed = try await task.value
+            try? CredentialStore.saveXaiCredentials(refreshed)
+            xaiRefreshTasks[key] = nil
+            return refreshed
+        } catch {
+            xaiRefreshTasks[key] = nil
+            throw error
+        }
     }
 
     func parseXai(_ data: Data) throws -> ProviderUsage {
@@ -1031,7 +1415,8 @@ actor IntegrationService {
                 let fetched: ProviderUsage
                 do {
                     fetched = try await fetchAntigravityUsage(token: token)
-                } catch IntegrationError.http(_, 401) {
+                } catch {
+                    guard isAuthenticationFailure(error) else { throw error }
                     let refreshed = try await googleAccessToken(for: account, forceRefresh: true)
                     fetched = try await fetchAntigravityUsage(token: refreshed)
                 }
@@ -1061,41 +1446,68 @@ actor IntegrationService {
     private func googleAccessToken(for account: GoogleCredentials, forceRefresh: Bool = false) async throws -> String {
         if !forceRefresh, let cached = googleTokenCache[account.refreshToken], cached.expiresAt.timeIntervalSinceNow > 60 { return cached.token }
         if !forceRefresh, let token = account.accessToken, !token.isEmpty { return token }
-        let environment = ProcessInfo.processInfo.environment
-        let savedClients = CredentialStore.googleOAuthClients().map { ($0.clientID, $0.clientSecret) }
-        if ProcessInfo.processInfo.arguments.contains("--diagnostics") {
-            FileHandle.standardError.write(Data("Google OAuth: \(savedClients.count) local client configuration(s) available.\n".utf8))
-        }
-        let clients: [(String, String)] = savedClients + ["ANTIGRAVITY", "GEMINI"].compactMap { prefix in
+        let refreshed = try await refreshGoogleCredentials(account)
+        googleTokenCache[account.refreshToken] = (refreshed.accessToken ?? "", refreshed.expiresAt ?? Date().addingTimeInterval(3600))
+        googleTokenCache[refreshed.refreshToken] = (refreshed.accessToken ?? "", refreshed.expiresAt ?? Date().addingTimeInterval(3600))
+        return refreshed.accessToken ?? ""
+    }
+
+    private func refreshGoogleCredentials(_ account: GoogleCredentials) async throws -> GoogleCredentials {
+        guard !account.refreshToken.isEmpty else { throw IntegrationError.notConfigured("Antigravity OAuth credentials expired. Sign in again.") }
+        let key = fingerprint(account.refreshToken)
+        if let task = googleRefreshTasks[key] { return try await task.value }
+        var clients = CredentialStore.googleOAuthClients().map { ($0.clientID, $0.clientSecret) }
+        clients += ["ANTIGRAVITY", "GEMINI"].compactMap { prefix in
             guard let id = environment["\(prefix)_OAUTH_CLIENT_ID"], !id.isEmpty,
                   let secret = environment["\(prefix)_OAUTH_CLIENT_SECRET"], !secret.isEmpty else { return nil }
             return (id, secret)
         }
+        if ProcessInfo.processInfo.arguments.contains("--diagnostics") {
+            FileHandle.standardError.write(Data("Google OAuth: \(clients.count) local client configuration(s) available.\n".utf8))
+        }
         guard !clients.isEmpty else {
             throw IntegrationError.notConfigured("OAuth setup required. Open Integrations → Antigravity → Configure OAuth.")
         }
-        for (clientID, clientSecret) in clients {
-            try Task.checkCancellation()
-            var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
-            request.httpMethod = "POST"
-            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            request.httpBody = formData([
-                "client_id": clientID,
-                "client_secret": clientSecret,
-                "grant_type": "refresh_token",
-                "refresh_token": account.refreshToken
-            ])
-            let (data, response) = try await session.data(for: request)
-            if (response as? HTTPURLResponse)?.statusCode == 400 { continue }
-            try validate(response, data: data, provider: "Google OAuth")
-            guard
-                  let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let token = value["access_token"] as? String else { continue }
-            let expires = number(value["expires_in"])?.doubleValue ?? 3600
-            googleTokenCache[account.refreshToken] = (token, Date().addingTimeInterval(expires))
-            return token
+        let session = self.session
+        let task = Task { [session, clients] in
+            for (clientID, clientSecret) in clients {
+                try Task.checkCancellation()
+                var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
+                request.httpMethod = "POST"
+                request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                request.httpBody = Self.formData([
+                    "client_id": clientID,
+                    "client_secret": clientSecret,
+                    "grant_type": "refresh_token",
+                    "refresh_token": account.refreshToken
+                ])
+                let (data, response) = try await session.data(for: request)
+                if (response as? HTTPURLResponse)?.statusCode == 400 { continue }
+                try validate(response, data: data, provider: "Google OAuth")
+                guard let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let token = nonEmptyString(value["access_token"]) else { continue }
+                let expiresAt = Date().addingTimeInterval(number(value["expires_in"])?.doubleValue ?? 3600)
+                return GoogleCredentials(
+                    label: account.label,
+                    refreshToken: nonEmptyString(value["refresh_token"]) ?? account.refreshToken,
+                    accessToken: token,
+                    expiresAt: expiresAt,
+                    location: account.location,
+                    sourceRefreshToken: account.sourceRefreshToken ?? account.refreshToken
+                )
+            }
+            throw IntegrationError.invalidResponse("Could not refresh Antigravity credentials.")
         }
-        throw IntegrationError.invalidResponse("Could not refresh Antigravity credentials.")
+        googleRefreshTasks[key] = task
+        do {
+            let refreshed = try await task.value
+            try? CredentialStore.saveGoogleCredentials(refreshed)
+            googleRefreshTasks[key] = nil
+            return refreshed
+        } catch {
+            googleRefreshTasks[key] = nil
+            throw error
+        }
     }
 
     private func fetchAntigravityUsage(token: String) async throws -> ProviderUsage {
@@ -1119,14 +1531,14 @@ actor IntegrationService {
                     return try parseAntigravitySummary(load: load, summary: summary)
                 } catch {
                     if case IntegrationError.rateLimited = error { throw error }
-                    if case IntegrationError.http(_, 401) = error { throw error }
+                    if isAuthenticationFailure(error) { throw error }
                     try Task.checkCancellation()
                 }
                 let quota = try await postJSON("\(endpoint):retrieveUserQuota", headers: headers, body: body)
                 return try parseAntigravityQuota(load: load, quota: quota)
             } catch {
                 if case IntegrationError.rateLimited = error { throw error }
-                if case IntegrationError.http(_, 401) = error { throw error }
+                if isAuthenticationFailure(error) { throw error }
                 try Task.checkCancellation()
                 lastError = error
             }
@@ -1241,7 +1653,7 @@ actor IntegrationService {
         }
     }
 
-    private func formData(_ fields: [String: String]) -> Data {
+    private static func formData(_ fields: [String: String]) -> Data {
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
         return fields.map { key, value in
             "\(key.addingPercentEncoding(withAllowedCharacters: allowed) ?? key)=\(value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value)"
@@ -1259,6 +1671,11 @@ private func nonEmptyString(_ value: Any?) -> String? {
     guard let string = value as? String else { return nil }
     let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.isEmpty ? nil : trimmed
+}
+
+private func isAuthenticationFailure(_ error: Error) -> Bool {
+    guard case IntegrationError.http(_, let status) = error else { return false }
+    return (401...403).contains(status)
 }
 
 private func fingerprint(_ value: String) -> String {
