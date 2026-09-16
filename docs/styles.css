@@ -427,7 +427,41 @@ code {
   flex-direction: column;
   align-items: center;
   gap: 0;
-  min-height: 460px;
+  min-height: 0;
+}
+
+.shot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.75rem;
+}
+
+.shot-grid figure {
+  margin: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.shot-grid img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.shot-grid figcaption {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  padding: 0.65rem 0.85rem 0.8rem;
+}
+
+@media (max-width: 900px) {
+  .shot-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .demo {
@@ -559,6 +593,19 @@ code {
 .demo-dropdown.is-open {
   opacity: 1;
   transform: scale(1) translateY(0);
+}
+
+.demo-dropdown.demo-dropdown-shot {
+  max-width: 376px;
+  padding: 0;
+  overflow: hidden;
+  background: #1c1c1e;
+}
+
+.demo-shot {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .demo-dropdown::before {

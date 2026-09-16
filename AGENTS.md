@@ -34,5 +34,5 @@ Two surfaces in one repo:
 ## Landing page rules (docs/)
 
 - Static HTML/CSS/JS only — no build step, no framework (per `.impeccable/surfaces/docs-index-html.md`). The one allowed JS is small vanilla animation respecting `prefers-reduced-motion`.
-- The published site still describes v0.2.5, not the unreleased multi-provider build. Before releasing that build, update the site's access claims and screenshots: integrations now use Keychain and optional tokens. Keep the no-browser-cookies/no-third-party-backend claims precise; never fabricate testimonials, press, or stats or imply provider affiliation.
+- The published site describes the current multi-provider OpenBar build. Keep access claims precise (Keychain and optional tokens, no browser cookies, no third-party backend). Never fabricate testimonials, press, or stats or imply provider affiliation. After a native UI change, refresh `assets/screenshots/` and `docs/assets/screenshots/` from `scripts/check.sh`.
 - The page is maintained with the `impeccable` skill vendored at `docs/.agents/skills/impeccable`; surface state lives in `.impeccable/surfaces/`.

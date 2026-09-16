@@ -23,7 +23,7 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenBar — Free &amp; Native AI Subscription Monitor for macOS</title>
-  <meta name="description" content="Free and native macOS menu-bar monitoring for OpenAI Codex, Claude Code, GitHub Copilot, Gemini Antigravity, and OpenCode Go subscriptions. Multiple accounts, rate limits, and reset times in one place. No third-party backend.">
+  <meta name="description" content="Free and native macOS menu-bar monitoring for OpenAI Codex, Claude Code, GitHub Copilot, Gemini Antigravity, OpenCode Go, and xAI Grok. Multiple accounts, rate limits, and reset times in one place. No third-party backend.">
   <meta name="author" content="4nkitd">
   <meta name="theme-color" content="#121212">
   <link rel="canonical" href="https://4nkitd.github.io/openbar/">
@@ -34,14 +34,14 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
   <meta property="og:site_name" content="OpenBar">
   <meta property="og:url" content="https://4nkitd.github.io/openbar/">
   <meta property="og:title" content="OpenBar — Free &amp; Native AI Subscription Monitor for macOS">
-  <meta property="og:description" content="Free and native macOS menu-bar monitoring for OpenAI Codex, Claude Code, GitHub Copilot, Gemini Antigravity, and OpenCode Go subscriptions. Multiple accounts, rate limits, and reset times in one place. No third-party backend.">
+  <meta property="og:description" content="Free and native macOS menu-bar monitoring for OpenAI Codex, Claude Code, GitHub Copilot, Gemini Antigravity, OpenCode Go, and xAI Grok. Multiple accounts, rate limits, and reset times in one place. No third-party backend.">
   <meta property="og:image" content="https://4nkitd.github.io/openbar/assets/og-card.jpg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="OpenBar usage popover showing progress ring, multi-provider accounts, and reset details">
+  <meta property="og:image:alt" content="OpenBar usage popover showing provider-colored quota bars, reset times, and multiple accounts">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="OpenBar — Free &amp; Native AI Subscription Monitor for macOS">
-  <meta name="twitter:description" content="Free and native macOS menu-bar monitoring for OpenAI Codex, Claude Code, GitHub Copilot, Gemini Antigravity, and OpenCode Go subscriptions. Multiple accounts, rate limits, and reset times in one place. No third-party backend.">
+  <meta name="twitter:description" content="Free and native macOS menu-bar monitoring for OpenAI Codex, Claude Code, GitHub Copilot, Gemini Antigravity, OpenCode Go, and xAI Grok. Multiple accounts, rate limits, and reset times in one place. No third-party backend.">
   <meta name="twitter:image" content="https://4nkitd.github.io/openbar/assets/og-card.jpg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -66,11 +66,11 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "macOS 13.0 or later",
     "processorRequirements": "Apple Silicon (arm64)",
-    "softwareVersion": "0.1.0",
-    "downloadUrl": "https://github.com/4nkitd/openbar/releases/download/v0.1.0/OpenBar-0.1.0-macos-arm64.zip",
+    "softwareVersion": "0.1.7",
+    "downloadUrl": "https://github.com/4nkitd/openbar/releases/download/v0.1.7/OpenBar-0.1.7-macos-arm64.zip",
     "installUrl": "https://github.com/4nkitd/openbar/releases",
     "image": "https://4nkitd.github.io/openbar/assets/icon-256.png",
-    "screenshot": "https://4nkitd.github.io/openbar/assets/screenshots/dropdown.png",
+    "screenshot": "https://4nkitd.github.io/openbar/assets/screenshots/popover-dark.png",
     "offers": {
       "@type": "Offer",
       "price": "0",
@@ -99,7 +99,7 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
         <a href="#faq">FAQ</a>
       </nav>
       <span class="nav-download">
-        <a class="btn btn-primary btn-small" href="https://github.com/4nkitd/openbar/releases/download/v0.1.0/OpenBar-0.1.0-macos-arm64.zip" target="_blank" rel="noopener noreferrer">Download</a>
+        <a class="btn btn-primary btn-small" href="https://github.com/4nkitd/openbar/releases/download/v0.1.7/OpenBar-0.1.7-macos-arm64.zip" target="_blank" rel="noopener noreferrer">Download</a>
         <button type="button" class="install-help-trigger install-help-icon" aria-label="How to open OpenBar if macOS blocks it">
           <svg viewBox="0 0 16 16" width="15" height="15" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"/><path d="M8 7.2v4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="5" r="0.9" fill="currentColor"/></svg>
         </button>
@@ -113,7 +113,7 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
   <section class="announce" aria-label="Product announcement">
     <div class="wrap announce-inner">
       <span class="badge">Multi-Provider</span>
-      <p class="announce-text"><span class="announce-text-long">OpenBar monitors OpenAI Codex, Claude Code, GitHub Copilot, Gemini Antigravity &amp; OpenCode Go.</span><span class="announce-text-short">Multi-account AI subscription monitoring &rarr;</span></p>
+      <p class="announce-text"><span class="announce-text-long">OpenBar monitors Codex, Claude Code, Copilot, Antigravity, OpenCode Go &amp; xAI Grok.</span><span class="announce-text-short">Multi-account AI subscription monitoring &rarr;</span></p>
       <div class="announce-ctas">
         <button type="button" class="btn btn-ghost btn-small announce-waitlist-btn" id="waitlist-toggle" aria-expanded="false" aria-controls="waitlist-panel">Join Waitlist</button>
         <a class="announce-ph-link" href="https://github.com/4nkitd/openbar" target="_blank" rel="noopener noreferrer" aria-label="OpenBar on GitHub">
@@ -141,9 +141,9 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
         <div class="hero-copy">
           <p class="eyebrow">macOS 13+ &middot; Apple Silicon &middot; Free</p>
           <h1 class="display">Your AI subscriptions.<br>Right in your<br><span class="accent-text">menu bar.</span></h1>
-          <p class="hero-sub">Native macOS menu-bar monitoring for your AI coding subscriptions. Track OpenAI Codex, Claude Code, GitHub Copilot, Gemini Antigravity, and OpenCode Go with multiple accounts. No browser cookies. No browser scraping. No third-party backend.</p>
+          <p class="hero-sub">Native macOS menu-bar monitoring for your AI coding subscriptions. Track OpenAI Codex, Claude Code, GitHub Copilot, Gemini Antigravity, OpenCode Go, and xAI Grok with multiple accounts. No browser cookies. No browser scraping. No third-party backend.</p>
           <div class="cta-row">
-            <a class="btn btn-primary" href="https://github.com/4nkitd/openbar/releases/download/v0.1.0/OpenBar-0.1.0-macos-arm64.zip" target="_blank" rel="noopener noreferrer">Download for macOS — Free</a>
+            <a class="btn btn-primary" href="https://github.com/4nkitd/openbar/releases/download/v0.1.7/OpenBar-0.1.7-macos-arm64.zip" target="_blank" rel="noopener noreferrer">Download for macOS — Free</a>
             <a class="btn btn-ghost" href="https://github.com/4nkitd/openbar" target="_blank" rel="noopener noreferrer">View on GitHub</a>
           </div>
           <p class="install-notice">
@@ -154,12 +154,12 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
         </div>
 
         <div class="hero-visual">
-          <div class="demo" id="usage-demo" role="group" aria-label="Live demonstration of the OpenBar blue status ring and 63% menu bar label with the usage popover open">
+          <div class="demo" id="usage-demo" role="group" aria-label="OpenBar menu bar with the usage popover open">
             <div class="demo-menubar">
               <button type="button" class="demo-menuitem" id="demo-menubar-toggle" aria-expanded="false" aria-controls="demo-dropdown">
                 <span class="demo-status-ring" id="demo-status-ring" aria-hidden="true"><img class="demo-status-core" src="assets/icon-32.png" alt=""></span>
-                <span class="demo-status-percent" id="demo-status-percent" aria-hidden="true">63%</span>
-                <span class="sr-only" id="demo-status-label">Open OpenBar, 63% used</span>
+                <span class="demo-status-percent" id="demo-status-percent" aria-hidden="true">81%</span>
+                <span class="sr-only" id="demo-status-label">Open OpenBar, 81% remaining</span>
               </button>
               <span class="demo-sysicons" aria-hidden="true">
                 <svg viewBox="0 0 16 12" width="16" height="12" fill="none"><path d="M8 10.2a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm-3.1-3a4.4 4.4 0 0 1 6.2 0 .6.6 0 0 1-.85.85 3.2 3.2 0 0 0-4.5 0 .6.6 0 0 1-.85-.85Zm-2.15-2.15a7.6 7.6 0 0 1 10.5 0 .6.6 0 1 1-.83.87 6.4 6.4 0 0 0-8.84 0 .6.6 0 0 1-.83-.87Z" fill="currentColor"/></svg>
@@ -171,36 +171,11 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
               </span>
             </div>
 
-            <div class="demo-dropdown" id="demo-dropdown" hidden>
-              <div class="demo-popover-head">
-                <img src="assets/icon-32.png" width="22" height="22" alt="">
-                <span class="demo-title">OpenBar</span>
-                <span class="demo-plus">MULTI-ACCOUNT</span>
-                <button type="button" class="demo-overflow" id="demo-overflow" aria-expanded="false" aria-controls="demo-actions" aria-label="Open actions menu">&#8230;</button>
-              </div>
-              <div class="demo-ring-wrap">
-                <div class="demo-usage-ring" id="demo-usage-ring" role="progressbar" aria-label="Primary usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="63">
-                  <div class="demo-ring-inner"><strong id="demo-percent">0%</strong><span id="demo-mode">Codex (Work)</span></div>
-                </div>
-              </div>
-              <div class="demo-native-group">
-                <div class="demo-info-row"><span class="demo-row-icon">&#9716;</span><span>Active account</span><strong>Codex &middot; Work</strong></div>
-                <div class="demo-info-row"><span class="demo-row-icon">&#9202;</span><span>Resets in</span><strong id="demo-resets-in">2h 18m</strong></div>
-                <div class="demo-info-row"><span class="demo-row-icon">&#9638;</span><span>Reset time</span><strong id="demo-reset-time">4:33 PM</strong></div>
-                <div class="demo-info-row"><span class="demo-row-icon">&#8634;</span><span>Other accounts</span><strong id="demo-credits">Claude &middot; Copilot</strong></div>
-                <div class="demo-info-row demo-reset-row"><span class="demo-row-icon">&#9889;</span><span>Quota reset credit</span><button type="button" id="demo-use-reset" disabled>Use Reset</button></div>
-              </div>
-              <div class="demo-warning" id="demo-warning" hidden>Primary quota window exhausted. Active account fallback available.</div>
-              <div class="demo-footer"><span>Updated <span id="demo-time">2:15 PM</span></span><button type="button" id="demo-refresh" aria-label="Refresh usage">&#8635;</button></div>
-              <div class="demo-actions" id="demo-actions" hidden>
-                <button type="button" id="demo-menu-refresh">Refresh <kbd>&#8984;R</kbd></button>
-                <button type="button" id="demo-preferences">Settings&hellip; <kbd>&#8984;,</kbd></button>
-                <button type="button" id="demo-checkupdates">Check for Updates&hellip;</button>
-                <button type="button" id="demo-quit">Quit OpenBar <kbd>&#8984;Q</kbd></button>
-              </div>
+            <div class="demo-dropdown demo-dropdown-shot" id="demo-dropdown" hidden>
+              <img class="demo-shot" src="assets/screenshots/popover-dark.png" width="752" height="1200" alt="OpenBar popover with Codex, Claude Code, OpenCode Go, GitHub Copilot, Antigravity, and xAI Grok quota bars">
             </div>
           </div>
-          <p class="demo-caption">Live demo - click the <strong>usage ring</strong> in the menu bar to open it.</p>
+          <p class="demo-caption">Click the menu-bar item to open the real popover.</p>
 
           <div class="win-overlay" id="prefs-window" hidden role="dialog" aria-modal="true" aria-labelledby="prefs-title" tabindex="-1">
             <div class="win win-prefs win-settings">
@@ -220,16 +195,16 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
                 <section class="settings-pane" data-settings-pane="general">
                   <div class="settings-section"><h3><span>&#9673;</span> Startup</h3><div class="settings-group"><div class="settings-row"><span>Launch OpenBar at login</span><span class="settings-switch is-on"></span></div></div><p>OpenBar opens automatically when you log in to your Mac.</p></div>
                   <div class="settings-section"><h3><span>&#9684;</span> Usage</h3><div class="settings-group"><div class="settings-row"><span>Refresh interval</span><span class="win-select">5 minutes &#8964;</span></div><label class="settings-choice"><span class="settings-radio is-on"></span>Percentage used</label><label class="settings-choice"><span class="settings-radio"></span>Percentage remaining</label></div><p>How often quotas are fetched, and what the menu bar summary shows.</p></div>
-                  <div class="settings-section"><h3><span>&#8635;</span> Updates</h3><div class="settings-group"><div class="settings-row"><span>Automatically check for updates</span><span class="settings-switch is-on"></span></div></div><p>New versions are checked via Sparkle.</p></div>
+                  <div class="settings-section"><h3><span>&#8635;</span> Updates</h3><div class="settings-group"><div class="settings-row"><span>Automatically check for updates</span><span class="settings-switch"></span></div></div><p>Sparkle updates stay off unless you ship your own feed. Homebrew is the supported upgrade path.</p></div>
                 </section>
                 <section class="settings-pane" data-settings-pane="integrations" hidden>
-                  <div class="settings-section"><h3><span>&#128273;</span> Account Integrations</h3><div class="settings-group"><div class="settings-row"><span>OpenAI Codex</span><strong>2 accounts (Work, Personal)</strong></div><div class="settings-row"><span>Claude Code</span><strong>1 account (Anthropic OAuth)</strong></div><div class="settings-row"><span>GitHub Copilot</span><strong>1 token (Keychain)</strong></div><div class="settings-row"><span>Gemini Antigravity</span><strong>1 account (Google Token)</strong></div><div class="settings-row"><span>OpenCode Go</span><strong>1 key (Keychain)</strong></div></div><p>Manage separate credentials and independent refresh state per account in Settings.</p></div>
+                  <div class="settings-section"><h3><span>&#128273;</span> Account Integrations</h3><div class="settings-group"><div class="settings-row"><span>OpenAI Codex</span><strong>2 accounts (Work, Personal)</strong></div><div class="settings-row"><span>Claude Code</span><strong>1 account (Anthropic OAuth)</strong></div><div class="settings-row"><span>GitHub Copilot</span><strong>1 token (Keychain)</strong></div><div class="settings-row"><span>Gemini Antigravity</span><strong>1 account (Google Token)</strong></div><div class="settings-row"><span>OpenCode Go</span><strong>1 key (Keychain)</strong></div><div class="settings-row"><span>xAI Grok</span><strong>1 account (OpenCode OAuth)</strong></div></div><p>Manage separate credentials and independent refresh state per account in Settings.</p></div>
                 </section>
                 <section class="settings-pane" data-settings-pane="notifications" hidden>
                   <div class="settings-section"><h3><span>&#128276;</span> Alerts</h3><div class="settings-group"><div class="settings-row"><span>Notify at 80% usage</span><span class="settings-switch is-on"></span></div><div class="settings-row"><span>Notify at 90% usage</span><span class="settings-switch is-on"></span></div><div class="settings-row"><span>Notify when exhausted</span><span class="settings-switch is-on"></span></div><div class="settings-row"><span>Notify when quotas reset</span><span class="settings-switch is-on"></span></div></div><p>OpenBar sends a macOS notification when any active account crosses a threshold.</p></div>
                 </section>
                 <section class="settings-pane" data-settings-pane="about" hidden>
-                  <div class="settings-section"><h3><span>&#9432;</span> About</h3><div class="settings-group"><div class="settings-about"><img src="assets/icon-256.png" width="48" height="48" alt=""><div><strong>OpenBar</strong><span>Version 0.1.0</span></div></div><div class="settings-row settings-row-actions"><a class="win-btn" href="https://github.com/4nkitd/openbar" target="_blank" rel="noopener noreferrer">View on GitHub</a><button type="button" class="win-btn" id="win-check-updates">Check for Updates&hellip;</button></div></div><p>Native macOS quota monitoring for your AI coding subscriptions. Multi-provider and multi-account support with zero third-party backend.</p></div>
+                  <div class="settings-section"><h3><span>&#9432;</span> About</h3><div class="settings-group"><div class="settings-about"><img src="assets/icon-256.png" width="48" height="48" alt=""><div><strong>OpenBar</strong><span>Version 0.1.7</span></div></div><div class="settings-row settings-row-actions"><a class="win-btn" href="https://github.com/4nkitd/openbar" target="_blank" rel="noopener noreferrer">View on GitHub</a><button type="button" class="win-btn" id="win-check-updates">Check for Updates&hellip;</button></div></div><p>Native macOS quota monitoring for your AI coding subscriptions. Multi-provider and multi-account support with zero third-party backend.</p></div>
                 </section>
               </div>
             </div>
@@ -244,7 +219,7 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
               </div>
               <div class="update-state" id="update-done" hidden>
                 <p class="win-dialog-title">You&rsquo;re up to date!</p>
-                <p class="win-dialog-text">OpenBar 0.1.0 is currently the newest version available.</p>
+                <p class="win-dialog-text">OpenBar 0.1.7 is currently the newest version available.</p>
                 <button type="button" class="win-btn win-btn-primary" id="update-ok">OK</button>
               </div>
             </div>
@@ -255,8 +230,30 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
       <div class="reads-strip">
         <div class="wrap reads-inner">
           <span class="badge">Integrations</span>
-          <code>Codex &middot; Claude &middot; Copilot &middot; Antigravity &middot; OpenCode Go</code>
+          <code>Codex &middot; Claude &middot; Copilot &middot; Antigravity &middot; OpenCode Go &middot; xAI</code>
           <span class="reads-note">— multi-account &amp; local credentials</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-shots" id="screenshots">
+      <div class="wrap">
+        <p class="eyebrow">The actual UI</p>
+        <h2 class="headline">Quota bars, every window, Integrations.</h2>
+        <p class="section-sub">Native AppKit screenshots from 0.1.7 — not a mock of an older ring UI.</p>
+        <div class="shot-grid">
+          <figure>
+            <img src="assets/screenshots/popover-dark.png" width="752" height="1200" alt="Dark usage popover with six provider quota bars">
+            <figcaption>Popover</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/screenshots/popover-expanded.png" width="752" height="1200" alt="Expanded quota windows for Codex and Claude">
+            <figcaption>Expanded windows</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/screenshots/settings-dark.png" width="1200" height="900" alt="Integrations settings for OpenAI Codex">
+            <figcaption>Integrations</figcaption>
+          </figure>
         </div>
       </div>
     </section>
@@ -265,7 +262,7 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
       <div class="wrap">
         <p class="eyebrow">Features</p>
         <h2 class="headline">Everything an AI quota monitor needs. Nothing it doesn't.</h2>
-        <p class="section-sub">No dashboards, browser extensions, graphs, themes, or busywork. OpenBar stays small because the menu bar is all this job needs — 5 providers, multiple accounts, zero extra permissions.</p>
+        <p class="section-sub">No dashboards, browser extensions, graphs, themes, or busywork. OpenBar stays small because the menu bar is all this job needs — six providers, multiple accounts, zero extra permissions.</p>
 
         <div class="difference-card">
           <div class="difference-copy">
@@ -301,8 +298,8 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
           <li class="feature-row">
             <span class="feature-icon"><svg viewBox="0 0 20 20" width="18" height="18" fill="none"><circle cx="10" cy="10" r="7.25" stroke="currentColor" stroke-width="1.5"/><path d="M10 6v4l2.6 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
             <span class="feature-copy">
-              <span class="feature-title">5 Supported Providers</span>
-              <span class="feature-desc">OpenAI Codex, Claude Code, GitHub Copilot, Gemini Antigravity, and OpenCode Go visible in one popover.</span>
+              <span class="feature-title">Six providers</span>
+              <span class="feature-desc">OpenAI Codex, Claude Code, GitHub Copilot, Gemini Antigravity, OpenCode Go, and xAI Grok in one popover. When OpenCode is running, the active provider’s bar animates.</span>
             </span>
           </li>
           <li class="feature-row">
@@ -372,20 +369,20 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
         <h2 class="headline">Running in under a minute.</h2>
         <p class="section-sub">Requires an Apple Silicon Mac on macOS 13 Ventura or newer. Install via Homebrew or download the release archive.</p>
         <ol class="install-steps">
-          <li>Install via Homebrew: <code>brew install --cask 4nkitd/tap/openbar</code>, or <a href="https://github.com/4nkitd/openbar/releases/download/v0.1.0/OpenBar-0.1.0-macos-arm64.zip" target="_blank" rel="noopener noreferrer">download the latest release ZIP</a>.</li>
+          <li>Install via Homebrew: <code>brew install --cask 4nkitd/tap/openbar</code>, or <a href="https://github.com/4nkitd/openbar/releases/download/v0.1.7/OpenBar-0.1.7-macos-arm64.zip" target="_blank" rel="noopener noreferrer">download the latest release ZIP</a>.</li>
           <li>Unzip the downloaded archive if needed.</li>
           <li>Drag <code>OpenBar.app</code> into <code>/Applications</code>.</li>
           <li>Open it and configure your accounts in <strong>Integrations</strong>.</li>
         </ol>
         <div class="cta-row">
-          <a class="btn btn-primary" href="https://github.com/4nkitd/openbar/releases/download/v0.1.0/OpenBar-0.1.0-macos-arm64.zip" target="_blank" rel="noopener noreferrer">Download for macOS — Free</a>
+          <a class="btn btn-primary" href="https://github.com/4nkitd/openbar/releases/download/v0.1.7/OpenBar-0.1.7-macos-arm64.zip" target="_blank" rel="noopener noreferrer">Download for macOS — Free</a>
           <a class="btn btn-ghost" href="https://github.com/4nkitd/openbar#build-and-run" target="_blank" rel="noopener noreferrer">Build from source</a>
         </div>
         <p class="install-notice">
           <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"/><path d="M8 7.2v4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="5" r="0.9" fill="currentColor"/></svg>
           <span>If macOS says the app can&rsquo;t be opened, that&rsquo;s Gatekeeper, not a broken download. <button type="button" class="install-help-trigger install-help-link">How to open it</button></span>
         </p>
-        <p class="meta-line">Future versions install through OpenBar &rarr; Check for Updates&hellip;</p>
+        <p class="meta-line">Upgrade with <code>brew upgrade --cask 4nkitd/tap/openbar</code>.</p>
       </div>
     </section>
 
@@ -396,7 +393,7 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
         <div class="accordion">
           <details open>
             <summary><span class="q">Which providers and accounts does OpenBar support?</span></summary>
-            <p>OpenBar tracks OpenAI Codex, Claude Code, GitHub Copilot, Gemini Antigravity, and OpenCode Go. You can add multiple named accounts (such as Work and Personal) per provider, each with independent credentials and refresh state.</p>
+            <p>OpenBar tracks OpenAI Codex, Claude Code, GitHub Copilot, Gemini Antigravity, OpenCode Go, and xAI Grok. You can add multiple named accounts (such as Work and Personal) per provider, each with independent credentials and refresh state.</p>
           </details>
           <details>
             <summary><span class="q">Where are my credentials stored and does data leave my Mac?</span></summary>
@@ -412,7 +409,7 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
           </details>
           <details>
             <summary><span class="q">How is OpenBar different from CodexBar Lite or Headroom?</span></summary>
-            <p>OpenBar is the multi-provider, multi-account successor built natively for macOS. While original utilities tracked single providers or required browser scraping, OpenBar uses direct HTTPS APIs for 5 providers with Keychain token storage and zero backend servers.</p>
+            <p>OpenBar is the multi-provider, multi-account successor built natively for macOS. While original utilities tracked single providers or required browser scraping, OpenBar uses direct HTTPS APIs for six providers with Keychain token storage and zero backend servers.</p>
           </details>
           <details>
             <summary><span class="q">How do I uninstall OpenBar?</span></summary>
@@ -420,7 +417,7 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
           </details>
           <details>
             <summary><span class="q">Is OpenBar affiliated with AI model providers?</span></summary>
-            <p>No. OpenBar is an independent open-source utility and is not affiliated with, endorsed by, or sponsored by OpenAI, Anthropic, GitHub, Google, or OpenCode.</p>
+            <p>No. OpenBar is an independent open-source utility and is not affiliated with, endorsed by, or sponsored by OpenAI, Anthropic, GitHub, Google, OpenCode, or xAI.</p>
           </details>
         </div>
       </div>
@@ -432,7 +429,7 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
         <h2 class="headline">Know your usage. Nothing else granted.</h2>
         <p class="section-sub">Free, native, multi-provider, and small on purpose.</p>
         <div class="cta-row cta-row-center">
-          <a class="btn btn-primary" href="https://github.com/4nkitd/openbar/releases/download/v0.1.0/OpenBar-0.1.0-macos-arm64.zip" target="_blank" rel="noopener noreferrer">Download for macOS — Free</a>
+          <a class="btn btn-primary" href="https://github.com/4nkitd/openbar/releases/download/v0.1.7/OpenBar-0.1.7-macos-arm64.zip" target="_blank" rel="noopener noreferrer">Download for macOS — Free</a>
           <a class="btn btn-ghost" href="https://github.com/4nkitd/openbar" target="_blank" rel="noopener noreferrer">Star on GitHub</a>
         </div>
         <p class="install-notice install-notice-center">
@@ -474,7 +471,7 @@ User confirmed one reference (Chimlo) is sufficient craft bar.
         <p>OpenBar is distributed as a <code>.zip</code> release archive. Since it isn&rsquo;t currently notarized by Apple, macOS may ask you to confirm before opening it. That&rsquo;s expected, not a sign anything is wrong.</p>
 
         <ol class="help-steps">
-          <li>Download <code>OpenBar-0.1.0-macos-arm64.zip</code> from the <a href="https://github.com/4nkitd/openbar/releases" target="_blank" rel="noopener noreferrer">release page</a>.</li>
+          <li>Download <code>OpenBar-0.1.7-macos-arm64.zip</code> from the <a href="https://github.com/4nkitd/openbar/releases" target="_blank" rel="noopener noreferrer">release page</a>.</li>
           <li>Unzip the downloaded archive.</li>
           <li>Drag <code>OpenBar.app</code> into your <strong>Applications</strong> folder.</li>
           <li>Open Applications and launch <code>OpenBar.app</code>.</li>
@@ -587,6 +584,7 @@ BUILD_ONLY=1 ./scripts/install.sh</pre>
       }
 
       function setValue(v) {
+        if (!usageRing || !statusRing || !statusPercent || !statusLabel || !percent) return;
         var rounded = Math.round(v);
         var color = ringColor(rounded);
         usageRing.style.setProperty('--ring-progress', (v * 3.6) + 'deg');
@@ -633,7 +631,7 @@ BUILD_ONLY=1 ./scripts/install.sh</pre>
       function runIntro() {
         if (reduceMotion) {
           openDropdown();
-          play(usageValue);
+          if (usageRing) play(usageValue);
           return;
         }
         window.setTimeout(function () {
@@ -641,7 +639,7 @@ BUILD_ONLY=1 ./scripts/install.sh</pre>
           window.setTimeout(function () {
             menubarToggle.classList.remove('is-pressed');
             openDropdown();
-            play(usageValue);
+            if (usageRing) play(usageValue);
           }, 150);
         }, 1000);
       }
@@ -662,21 +660,18 @@ BUILD_ONLY=1 ./scripts/install.sh</pre>
           return;
         }
         openDropdown();
-        if (!started) {
-          started = true;
-          play(usageValue);
-        } else if (!playing) {
-          setValue(usageValue);
-        }
+        started = true;
+        if (usageRing && !playing) setValue(usageValue);
       });
 
       function closeActions() {
-        if (!actionsMenu || actionsMenu.hidden) return;
+        if (!actionsMenu || !overflowBtn || actionsMenu.hidden) return;
         actionsMenu.hidden = true;
         overflowBtn.setAttribute('aria-expanded', 'false');
       }
 
       function toggleActions() {
+        if (!actionsMenu || !overflowBtn) return;
         var opening = actionsMenu.hidden;
         actionsMenu.hidden = !opening;
         overflowBtn.setAttribute('aria-expanded', String(opening));
@@ -699,11 +694,11 @@ BUILD_ONLY=1 ./scripts/install.sh</pre>
         });
       }
 
-      overflowBtn.addEventListener('click', toggleActions);
-      refreshBtn.addEventListener('click', refreshDemo);
-      menuRefreshBtn.addEventListener('click', refreshDemo);
+      if (overflowBtn) overflowBtn.addEventListener('click', toggleActions);
+      if (refreshBtn) refreshBtn.addEventListener('click', refreshDemo);
+      if (menuRefreshBtn) menuRefreshBtn.addEventListener('click', refreshDemo);
 
-      resetBtn.addEventListener('click', function () {
+      if (resetBtn) resetBtn.addEventListener('click', function () {
         if (resetBtn.dataset.confirming === 'true') {
           window.clearTimeout(resetConfirmTimer);
           resetBtn.dataset.confirming = 'false';
@@ -762,9 +757,9 @@ BUILD_ONLY=1 ./scripts/install.sh</pre>
 
       function onKeydown(e) {
         if (e.key === 'Escape') {
-          if (!actionsMenu.hidden) {
+          if (actionsMenu && !actionsMenu.hidden) {
             closeActions();
-            overflowBtn.focus();
+            if (overflowBtn) overflowBtn.focus();
             return;
           }
           if (currentOpenWin) {
@@ -803,7 +798,7 @@ BUILD_ONLY=1 ./scripts/install.sh</pre>
 
       document.addEventListener('keydown', onKeydown);
       document.addEventListener('click', function (e) {
-        if (!actionsMenu.hidden && !actionsMenu.contains(e.target) && e.target !== overflowBtn) closeActions();
+        if (actionsMenu && !actionsMenu.hidden && !actionsMenu.contains(e.target) && e.target !== overflowBtn) closeActions();
       });
 
       [prefsWindow, updateWindow, installHelpModal].forEach(function (win) {
@@ -910,10 +905,13 @@ BUILD_ONLY=1 ./scripts/install.sh</pre>
         });
       });
 
-      document.getElementById('demo-quit').addEventListener('click', function () {
-        closeActions();
-        closeDropdown();
-      });
+      var quitBtn = document.getElementById('demo-quit');
+      if (quitBtn) {
+        quitBtn.addEventListener('click', function () {
+          closeActions();
+          closeDropdown();
+        });
+      }
 
       function runUpdateCheck() {
         openWin(updateWindow);

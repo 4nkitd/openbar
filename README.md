@@ -6,7 +6,7 @@ Native macOS menu-bar monitoring for your AI coding subscriptions. See each acco
 
 [Source](https://github.com/4nkitd/openbar) · [Issues](https://github.com/4nkitd/openbar/issues)
 
-OpenBar continues the menu-bar quota work from [Headroom](https://github.com/4nkitd/headroom). The inherited `docs/` website still describes the original CodexBar Lite release and is not the OpenBar website.
+OpenBar continues the menu-bar quota work from [Headroom](https://github.com/4nkitd/headroom). Site: [getcodexbar.xyz](https://getcodexbar.xyz) / [4nkitd.github.io/openbar](https://4nkitd.github.io/openbar/).
 
 ## Install
 
@@ -31,8 +31,10 @@ Quit Headroom and disable its launch-at-login setting before switching. If you u
 
 - OpenAI Codex, Claude Code, OpenCode Go, GitHub Copilot, Google Antigravity and xAI Grok.
 - Multiple named accounts per integration, with independent credentials, refresh state, cached readings and enable/disable switches.
-- Rounded, provider-colored bars with account names, percentages, reset countdowns and applicable Codex reset credits. Expand a provider to see every quota window.
+- Rounded, provider-colored bars with account names, percentages, reset countdowns and applicable Codex reset credits. Expand a provider to see every quota window. When OpenCode is running, the provider currently streaming or using tools animates in the popover.
 - A menu-bar summary of the most-constrained enabled account, with the account named in its tooltip.
+
+![Expanded quota windows](assets/screenshots/popover-expanded.png)
 - Used or remaining percentages, light/dark appearance, scrollable expanded details and keyboard controls.
 - Notifications at 80%, 90%, exhaustion and quota reset. Stale cache values do not trigger alerts.
 

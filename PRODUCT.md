@@ -12,11 +12,9 @@ Primary: an individual developer who uses one or more AI coding subscriptions on
 
 ## Product Purpose
 
-The native fork is now named **OpenBar** and maintained at `https://github.com/4nkitd/openbar`. It supports multiple named accounts per integration. The website's historical CodexBar Lite branding is intentionally unchanged; README documents current native behavior.
+The native app is **OpenBar**, maintained at `https://github.com/4nkitd/openbar`. It supports multiple named accounts per integration. The landing page in `docs/` describes the current multi-provider app.
 
-The multi-provider changes below are unreleased source behavior. The published landing page and v0.2.5 release remain Codex-only until a coordinated release updates them.
-
-CodexBar Lite is a native macOS menu bar app that shows quota windows and reset times for OpenAI Codex, Claude Code, OpenCode Go, GitHub Copilot, Gemini Antigravity, and xAI Grok. Each enabled integration gets its own linear progress bars. It notifies at 80%, 90%, exhaustion, and quota reset.
+OpenBar is a native macOS menu bar app that shows quota windows and reset times for OpenAI Codex, Claude Code, OpenCode Go, GitHub Copilot, Gemini Antigravity, and xAI Grok. Each enabled integration gets its own linear progress bars. It notifies at 80%, 90%, exhaustion, and quota reset. When OpenCode V2 is running locally, the provider currently streaming or using tools animates in the popover.
 
 ## Positioning
 
@@ -25,11 +23,11 @@ Usage comes from provider HTTP APIs, never browser scraping or provider CLI exec
 ## Operating Context
 
 - Requires an Apple Silicon Mac, macOS 13 Ventura or newer, and at least one supported provider account.
-- Install: download from GitHub Releases, move `CodexBarLite.app` to `/Applications`, open it.
+- Install: `brew install --cask 4nkitd/tap/openbar`, or download from GitHub Releases and move `OpenBar.app` to `/Applications`.
 - Codex sign-in is an explicit action in Settings; it opens `codex login` in Terminal and watches for completion for up to five minutes.
-- Updates ship over the air via Sparkle (`Codex → Check for Updates…`).
+- Updates ship through Homebrew (`brew upgrade --cask 4nkitd/tap/openbar`). Sparkle stays off unless a feed and public key are supplied at build time.
 - Build from source: `swift build` + `./scripts/install.sh`; signed releases via `./scripts/release.sh <version> <build-number>`.
-- Uninstall: quit and trash the app; optional cleanup removes `~/Library/Application Support/CodexBarLite` and the `dev.vaibhav.codexbar` defaults domain.
+- Uninstall: quit and trash the app; optional cleanup removes `~/Library/Application Support/OpenBar` and the `in.4nkitd.openbar` defaults domain.
 
 ## Capabilities and Constraints
 
@@ -44,10 +42,10 @@ Usage comes from provider HTTP APIs, never browser scraping or provider CLI exec
 
 ## Brand Commitments
 
-- Name: CodexBar Lite. Logo asset: `assets/codexbar-lite-blue-dot.png` (also copied to `docs/assets/logo.png`) — a near-black rounded-square app icon with one solid blue circle (`#1475FC`), the pinned primary brand color.
-- Existing screenshots predate the multi-provider UI and must be refreshed before release. The small blue menu-bar summary ring remains; the popover now uses one linear quota card per enabled integration.
+- Name: OpenBar. Logo asset: `assets/codexbar-lite-blue-dot.png` (also copied to `docs/assets/logo.png`) — a near-black rounded-square app icon with one solid blue circle (`#1475FC`), the pinned primary brand color.
+- Product screenshots live in `assets/screenshots/` and `docs/assets/screenshots/` (popover, expanded windows, Integrations). The menu-bar summary ring remains; the popover uses one linear quota bar per account.
 - Voice, as established in the README: direct, unhedged claims about what the app does *not* access; matter-of-fact rather than marketing-heavy.
-- **Standing landing-page direction (pinned 2026-07-23):** dark, near-black ground matching the logo's icon background, with the logo's blue (`#1475FC`) carried at Committed intensity (30-60% of the surface, not a sparing accent). Craft bar is [kraten.github.io/chimlo](https://kraten.github.io/chimlo) — a dark, confident developer-tool launch page (bold display headline, interactive product hero, feature grid, trust/privacy checklist section, FAQ accordion, closing CTA) — adapted to CodexBar Lite's own content and real screenshots, not copied verbatim. Product UI uses the ring-based menu icon, card-based popover, and tabbed Settings window from the app.
+- **Standing landing-page direction (pinned 2026-07-23):** dark, near-black ground matching the logo's icon background, with the logo's blue (`#1475FC`) carried at Committed intensity (30-60% of the surface, not a sparing accent). Craft bar is [kraten.github.io/chimlo](https://kraten.github.io/chimlo) — a dark, confident developer-tool launch page (bold display headline, interactive product hero, feature grid, trust/privacy checklist section, FAQ accordion, closing CTA) — adapted to OpenBar's own content and real screenshots, not copied verbatim. Product UI uses the ring-based menu icon and linear quota bars.
 
 ## Evidence on Hand
 
