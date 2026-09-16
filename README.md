@@ -17,7 +17,7 @@ brew install --cask 4nkitd/tap/openbar
 open -a OpenBar
 ```
 
-Or download [OpenBar v0.1.6](https://github.com/4nkitd/openbar/releases/download/v0.1.6/OpenBar-0.1.6-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
+Or download [OpenBar v0.1.7](https://github.com/4nkitd/openbar/releases/download/v0.1.7/OpenBar-0.1.7-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
 
 This release is ad-hoc signed and is not notarized. If Gatekeeper blocks the app, review the download source and allow it under **System Settings → Privacy & Security → Open Anyway**. Homebrew updates are available through `brew upgrade --cask 4nkitd/tap/openbar`.
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.7
+
+- Listen to the local OpenCode V2 event stream and animate the matching provider's quota bar while that model is streaming or running tools.
+- Header equalizer sits next to the unchanged plan label. Reduced motion uses a static brighter fill.
+
 ## 0.1.6
 
 - Reactive xAI OAuth refresh after authentication failures, including rotated refresh-token persistence for OpenCode V2, OpenCode V1 and Grok credential stores.

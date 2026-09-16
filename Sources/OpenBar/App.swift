@@ -16,6 +16,7 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let settings = SettingsStore.shared
     private let service = IntegrationService()
     private lazy var store = QuotaStore { [service] in try await service.fetch($0) }
+    private let activity = OpenCodeActivityMonitor()
     private lazy var notifications = NotificationManager(settings: settings)
     private var settingsWindow: SettingsWindowController?
     private let popover = NSPopover()
@@ -43,6 +44,10 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         controller.onOpenSettings = { [weak self] in self?.showSettings() }
         controller.onUseResetCredit = { [weak self] id in self?.useResetCredit(accountID: id) }
         store.onChange = { [weak self] in self?.render() }
+        activity.onChange = { [weak self] in
+            guard let self, self.popover.isShown else { return }
+            self.controller.setActive(self.activity.active)
+        }
         store.onFresh = { [weak self] in self?.notifications.evaluate($0) }
         store.onFailure = { [weak self] account, error in self?.notifications.evaluateFailure(error, account: account) }
         store.onRecovered = { [weak self] account in self?.notifications.clearFailure(for: account) }
@@ -65,6 +70,7 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             Task { @MainActor in self?.store.refresh() }
         }
         settings.importCompatibleOpenCodeAccounts()
+        activity.start()
         store.setAccounts(settings.enabledAccounts)
         Task {
             if ProcessInfo.processInfo.arguments.contains("--import-google-oauth-clients") {
@@ -133,7 +139,7 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func updatePopover() {
-        controller.update(states: store.presentationStates, enabled: store.enabled, displayMode: settings.displayMode)
+        controller.update(states: store.presentationStates, enabled: store.enabled, displayMode: settings.displayMode, active: activity.active)
     }
 
     @objc private func settingsChanged() {
@@ -253,6 +259,7 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         if let monitor = keyMonitor { NSEvent.removeMonitor(monitor) }
         keyMonitor = nil
+        controller.setActive([])
         controller.cancelResetConfirmation()
     }
 }

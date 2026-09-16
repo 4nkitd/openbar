@@ -344,6 +344,22 @@ private struct RegressionChecks {
         try check(migratedEntries.count == 1 && FileManager.default.fileExists(atPath: oldCache.path) && FileManager.default.fileExists(atPath: newCache.path), "Cache migration copies readings without deleting legacy data")
         print("PASS multi-account HTTP credential routing, failure isolation, removal and rebrand migration")
 
+        var remainder = ""
+        let frames = OpenCodeSSE.frames(from: "data: {\"type\":\"session.reasoning.delta\",\"data\":{\"sessionID\":\"ses_abc\"}}\n\n: heartbeat\n\ndata: {\"type\":\"server.connected\",\"data\":{}}\n\npartial", remainder: &remainder)
+        try check(frames.count == 2 && remainder == "partial", "SSE splits complete frames and keeps a partial remainder")
+        let first = try JSONSerialization.jsonObject(with: frames[0]) as! [String: Any]
+        let second = try JSONSerialization.jsonObject(with: frames[1]) as! [String: Any]
+        try check(OpenCodeEvent.activitySessionID(in: first) == "ses_abc", "Reasoning deltas count as consumption")
+        try check(OpenCodeEvent.activitySessionID(in: second) == nil, "server.connected is not consumption")
+        try check(OpenCodeEvent.isConsumption("session.tool.success") && OpenCodeEvent.isConsumption("session.step.streamed") && OpenCodeEvent.isConsumption("session.text.delta"), "Streaming and tools are consumption")
+        try check(!OpenCodeEvent.isConsumption("session.idle") && !OpenCodeEvent.isConsumption("shell.exited"), "Idle and raw shell events are not consumption")
+        try check(OpenCodeEvent.providerID(fromSession: ["data": ["model": ["id": "grok-4.6", "providerID": "xai"]]]) == "xai", "Session payload exposes providerID")
+        try check(IntegrationID.matchingOpenCodeProvider("xai") == .xai && IntegrationID.matchingOpenCodeProvider("openai") == .codex && IntegrationID.matchingOpenCodeProvider("google") == nil, "OpenCode provider IDs map onto integrations")
+        try check(OpenCodeServiceEndpoint.parse(Data(#"{"url":"http://127.0.0.1:9","password":"secret","pid":1}"#.utf8)) != nil, "Local service.json is accepted")
+        try check(OpenCodeServiceEndpoint.parse(Data(#"{"url":"http://example.com:9","password":"secret"}"#.utf8)) == nil, "Remote OpenCode URLs are rejected")
+        try check(OpenCodeServiceEndpoint.parse(Data(#"{"url":"http://127.0.0.1:9","password":""}"#.utf8)) == nil, "Empty service passwords are rejected")
+        print("PASS OpenCode activity event parsing and local service discovery")
+
         let app = NSApplication.shared
         let appDelegate = CheckAppDelegate()
         app.delegate = appDelegate
@@ -403,6 +419,10 @@ private struct RegressionChecks {
         try snapshot(controller.view, to: output.appendingPathComponent("popover-compact-dark.png"))
         window.appearance = NSAppearance(named: .aqua)
         try snapshot(controller.view, to: output.appendingPathComponent("popover-compact-light.png"))
+        controller.setActive([.codex])
+        window.contentView?.layoutSubtreeIfNeeded()
+        try check(descendants(controller.view).contains { $0.accessibilityLabel()?.localizedCaseInsensitiveContains("in use") == true }, "Active provider shows an in-use header indicator")
+        controller.setActive([])
         controller.update(states: [:], enabled: [], displayMode: .used)
         window.setContentSize(controller.preferredContentSize)
         try snapshot(controller.view, to: output.appendingPathComponent("popover-empty.png"))

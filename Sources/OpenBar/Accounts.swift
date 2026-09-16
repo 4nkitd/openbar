@@ -51,4 +51,8 @@ extension IntegrationID {
         case .antigravity: return nil
         }
     }
+
+    static func matchingOpenCodeProvider(_ providerID: String) -> IntegrationID? {
+        allCases.first { $0.openCodeProviderID == providerID }
+    }
 }

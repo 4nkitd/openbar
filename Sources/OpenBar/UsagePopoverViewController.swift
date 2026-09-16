@@ -14,6 +14,7 @@ final class UsagePopoverViewController: NSViewController {
     private var groups: [IntegrationID: IntegrationGroupView] = [:]
     private var order: [IntegrationID] = []
     private var emptyView: NSView?
+    private var active: Set<IntegrationID> = []
 
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 200))
@@ -81,8 +82,9 @@ final class UsagePopoverViewController: NSViewController {
         ])
     }
 
-    func update(states: [IntegrationID: IntegrationState], enabled: [IntegrationID], displayMode: UsageDisplayMode) {
+    func update(states: [IntegrationID: IntegrationState], enabled: [IntegrationID], displayMode: UsageDisplayMode, active: Set<IntegrationID> = []) {
         if !isViewLoaded { _ = view }
+        self.active = active
         if order != enabled {
             for id in order where !enabled.contains(id) {
                 if let group = groups.removeValue(forKey: id) { cards.removeArrangedSubview(group); group.removeFromSuperview() }
@@ -113,7 +115,10 @@ final class UsagePopoverViewController: NSViewController {
             empty.removeFromSuperview()
             emptyView = nil
         }
-        for id in enabled { groups[id]?.update(states[id] ?? IntegrationState(), mode: displayMode) }
+        for id in enabled {
+            groups[id]?.update(states[id] ?? IntegrationState(), mode: displayMode)
+            groups[id]?.setActive(active.contains(id))
+        }
         let pending = enabled.filter { states[$0]?.isRefreshing == true }.count
         let warnings = enabled.filter { states[$0]?.message != nil }.count
         subtitle.stringValue = "\(enabled.count) integration\(enabled.count == 1 ? "" : "s") · percentage \(displayMode.rawValue)"
@@ -128,6 +133,11 @@ final class UsagePopoverViewController: NSViewController {
         let maxHeight = min(680, (view.window?.screen ?? NSScreen.main)?.visibleFrame.height ?? 760) - 50
         preferredContentSize = NSSize(width: width, height: min(maxHeight, max(170, height + 92)))
         view.layoutSubtreeIfNeeded()
+    }
+
+    func setActive(_ active: Set<IntegrationID>) {
+        self.active = active
+        for id in order { groups[id]?.setActive(active.contains(id)) }
     }
 
     func cancelResetConfirmation() { groups[.codex]?.cancelReset() }
@@ -148,6 +158,7 @@ private final class IntegrationGroupView: NSView {
     private let accounts = NSStackView()
     private let toggle = NSButton()
     private let status = quotaLabel("", size: 11, secondary: true)
+    private let equalizer = ActivityEqualizerView()
     private let warning = NSTextField(wrappingLabelWithString: "")
     private var rows: [String: AccountQuotaView] = [:]
     private var ids: [String] = []
@@ -182,7 +193,10 @@ private final class IntegrationGroupView: NSView {
         toggle.setAccessibilityLabel("Show \(integration.name) quota details")
         status.lineBreakMode = .byTruncatingTail
         status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let header = NSStackView(views: [icon, name, flexibleSpacer(), status, toggle])
+        equalizer.color = AppBranding.brandColor(for: integration)
+        equalizer.isHidden = true
+        equalizer.setAccessibilityLabel("\(integration.name) in use")
+        let header = NSStackView(views: [icon, name, flexibleSpacer(), equalizer, status, toggle])
         header.orientation = .horizontal
         header.alignment = .centerY
         header.spacing = 8
@@ -254,6 +268,12 @@ private final class IntegrationGroupView: NSView {
         onResize?()
     }
 
+    func setActive(_ active: Bool) {
+        equalizer.isHidden = !active
+        equalizer.setActive(active)
+        rows.values.forEach { $0.setActive(active) }
+    }
+
     func cancelReset() { rows.values.forEach { $0.cancelReset() } }
     func resetResult(_ result: Result<ConsumeResetCreditsResponse, Error>, accountID: String) {
         for provider in state.providers where provider.configurationID == accountID { rows[provider.id]?.resetResult(result) }
@@ -270,6 +290,7 @@ private final class AccountQuotaView: NSStackView {
     private var confirming = false
     private var consuming = false
     private var resetEligible = false
+    private var live = false
     private var confirmTimer: Timer?
 
     init() {
@@ -318,6 +339,13 @@ private final class AccountQuotaView: NSStackView {
         resetButton.isHidden = !expanded || provider.resetCredits == nil
         resetButton.isEnabled = resetEligible && !consuming
         if !resetEligible { cancelReset() }
+        setActive(live)
+    }
+
+    func setActive(_ active: Bool) {
+        live = active
+        summary.setActive(active)
+        detailRows.forEach { $0.setActive(active) }
     }
 
     @objc private func resetClicked() {
@@ -363,9 +391,12 @@ private final class LimitQuotaView: NSView {
     private var progress: Double = 0
     private var usedPercent: Double = 0
     private var integration: IntegrationID = .codex
+    private(set) var isActive = false
 
     init() {
         super.init(frame: .zero)
+        wantsLayer = true
+        layer?.masksToBounds = false
         value.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
         value.setContentCompressionResistancePriority(.required, for: .horizontal)
         name.lineBreakMode = .byTruncatingMiddle
@@ -422,7 +453,10 @@ private final class LimitQuotaView: NSView {
         NSColor(white: dark ? 0.26 : 0.82, alpha: 1).setStroke()
         let stripes = NSBezierPath()
         stripes.lineWidth = 1
-        for x in stride(from: -bounds.height, through: bounds.width, by: 6) {
+        let crawl = (isActive && !OpenCodeActivityMonitor.reduceMotion)
+            ? CGFloat(CACurrentMediaTime().truncatingRemainder(dividingBy: 1.1) / 1.1) * 6
+            : 0
+        for x in stride(from: -bounds.height + crawl, through: bounds.width, by: 6) {
             stripes.move(to: NSPoint(x: x, y: 0))
             stripes.line(to: NSPoint(x: x + bounds.height, y: bounds.height))
         }
@@ -430,11 +464,49 @@ private final class LimitQuotaView: NSView {
         NSGraphicsContext.restoreGraphicsState()
         let fill = AppBranding.progressColor(forUsedPercent: Int(usedPercent), integration: integration)
             .withAlphaComponent(dark ? (integration == .xai && usedPercent < 80 ? 0.4 : 0.65) : 0.3)
-        fill.setFill()
+        if isActive {
+            let now = CACurrentMediaTime()
+            let sweep = now.truncatingRemainder(dividingBy: 2.2) / 2.2
+            let pulse = 0.5 + 0.5 * sin(sweep * 2 * .pi)
+            if !OpenCodeActivityMonitor.reduceMotion {
+                layer?.shadowColor = fill.cgColor
+                layer?.shadowOffset = .zero
+                layer?.shadowRadius = 8 + 6 * pulse
+                layer?.shadowOpacity = Float(0.28 + 0.2 * pulse)
+            } else {
+                layer?.shadowOpacity = 0
+            }
+            fill.withAlphaComponent(fill.alphaComponent + (OpenCodeActivityMonitor.reduceMotion ? 0.12 : 0.08 * pulse)).setFill()
+        } else {
+            layer?.shadowOpacity = 0
+            fill.setFill()
+        }
         filledPath.fill()
+        if isActive, !OpenCodeActivityMonitor.reduceMotion {
+            NSGraphicsContext.saveGraphicsState()
+            filledPath.addClip()
+            let sweep = CACurrentMediaTime().truncatingRemainder(dividingBy: 2.2) / 2.2
+            let span = max(36, bounds.width * 0.28)
+            let travel = bounds.width + span
+            let x = travel * sweep - span
+            NSGradient(colors: [
+                NSColor.white.withAlphaComponent(0),
+                NSColor.white.withAlphaComponent(dark ? 0.28 : 0.45),
+                NSColor.white.withAlphaComponent(0)
+            ])?.draw(in: NSRect(x: x, y: 0, width: span, height: bounds.height), angle: 0)
+            NSGraphicsContext.restoreGraphicsState()
+        }
         NSColor(white: dark ? 0.08 : 0.97, alpha: 0.94).setFill()
         NSBezierPath(roundedRect: convert(badge.bounds, from: badge), xRadius: 5, yRadius: 5).fill()
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    func setActive(_ active: Bool) {
+        guard isActive != active else { return }
+        isActive = active
+        if active, !OpenCodeActivityMonitor.reduceMotion { ActivityRedraw.shared.add(self) }
+        else { ActivityRedraw.shared.remove(self) }
+        needsDisplay = true
     }
 
     func update(_ limit: ProviderLimit, mode: UsageDisplayMode, integration: IntegrationID,
@@ -456,6 +528,87 @@ private final class LimitQuotaView: NSView {
         setAccessibilityRole(.group)
         setAccessibilityLabel("\(name.stringValue), \(value.stringValue) \(mode.rawValue), \(limit.displayLabel), \(reset.toolTip ?? "")" + (credits.map { ", \($0) reset credits available" } ?? ""))
         needsDisplay = true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { ActivityRedraw.shared.remove(self) }
+        else if isActive, !OpenCodeActivityMonitor.reduceMotion { ActivityRedraw.shared.add(self) }
+    }
+}
+
+private final class ActivityEqualizerView: NSView {
+    var color: NSColor = .white { didSet { needsDisplay = true } }
+    private(set) var isActive = false
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 14, height: 11) }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.image)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    func setActive(_ active: Bool) {
+        isActive = active
+        if active, !OpenCodeActivityMonitor.reduceMotion { ActivityRedraw.shared.add(self) }
+        else { ActivityRedraw.shared.remove(self) }
+        needsDisplay = true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { ActivityRedraw.shared.remove(self) }
+        else if isActive, !OpenCodeActivityMonitor.reduceMotion { ActivityRedraw.shared.add(self) }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let t = CACurrentMediaTime()
+        let delays: [CGFloat] = [0.55, 0.2, 0.8]
+        for index in 0..<3 {
+            let scale: CGFloat
+            if isActive, !OpenCodeActivityMonitor.reduceMotion {
+                scale = 0.35 + 0.65 * (0.5 + 0.5 * sin((t * 2 + delays[index]) * .pi))
+            } else {
+                scale = 0.7
+            }
+            let height = bounds.height * scale
+            let rect = NSRect(x: CGFloat(index) * 5, y: (bounds.height - height) / 2, width: 3, height: height)
+            color.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 1, yRadius: 1).fill()
+        }
+    }
+}
+
+@MainActor
+private final class ActivityRedraw {
+    static let shared = ActivityRedraw()
+    private var views = NSHashTable<NSView>.weakObjects()
+    private var timer: Timer?
+
+    func add(_ view: NSView) {
+        views.add(view)
+        guard timer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
+        }
+        timer.tolerance = 1.0 / 60
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    func remove(_ view: NSView) {
+        views.remove(view)
+        if views.allObjects.isEmpty {
+            timer?.invalidate()
+            timer = nil
+        }
+    }
+
+    private func tick() {
+        for view in views.allObjects { view.needsDisplay = true }
     }
 }
 
