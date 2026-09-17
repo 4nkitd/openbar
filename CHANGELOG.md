@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.8
+
+- Quota bars shimmer while a live check is in flight instead of showing Refreshing or Updating copy.
+- Launch no longer flashes Cached. Live check pending. Failed checks use an orange warning icon on the bar, with the error in the tooltip.
+
 ## 0.1.7
 
 - Listen to the local OpenCode V2 event stream and animate the matching provider's quota bar while that model is streaming or running tools.

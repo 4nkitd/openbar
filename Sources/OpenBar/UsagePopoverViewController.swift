@@ -122,7 +122,7 @@ final class UsagePopoverViewController: NSViewController {
         let pending = enabled.filter { states[$0]?.isRefreshing == true }.count
         let warnings = enabled.filter { states[$0]?.message != nil }.count
         subtitle.stringValue = "\(enabled.count) integration\(enabled.count == 1 ? "" : "s") · percentage \(displayMode.rawValue)"
-        footerLabel.stringValue = pending > 0 ? "Updating \(pending) provider\(pending == 1 ? "" : "s")…" : warnings > 0 ? "\(warnings) need attention" : "Direct from your providers"
+        footerLabel.stringValue = warnings > 0 ? "\(warnings) need attention" : "Direct from your providers"
         refreshButton.isEnabled = pending < enabled.count && !enabled.isEmpty
         resizeContent()
     }
@@ -242,11 +242,12 @@ private final class IntegrationGroupView: NSView {
         }
         for provider in state.providers {
             let status = provider.configurationID.flatMap { state.accountStatuses[$0] }
+            let attention = status?.message ?? (state.accountStatuses.isEmpty ? state.message : nil)
             rows[provider.id]?.update(provider, mode: mode, expanded: expanded,
                                      canReset: (status.map { $0.message == nil && !$0.isRefreshing } ?? (state.message == nil && !state.isRefreshing)),
-                                     status: status)
+                                     status: status, attention: attention)
         }
-        status.stringValue = state.isRefreshing ? "Updating…" : state.message != nil ? (state.providers.isEmpty ? "Unavailable" : "Check connection") : state.providers.count > 1 ? "\(state.providers.count) accounts" : state.providers.first?.plan ?? "Not checked"
+        status.stringValue = state.message != nil ? (state.providers.isEmpty ? "Unavailable" : "Check connection") : state.providers.count > 1 ? "\(state.providers.count) accounts" : state.providers.first?.plan ?? "Not checked"
         status.textColor = state.message == nil ? .secondaryLabelColor : .systemOrange
         toggle.isEnabled = !state.providers.isEmpty
         accounts.isHidden = state.providers.isEmpty
@@ -254,7 +255,7 @@ private final class IntegrationGroupView: NSView {
         if let message = state.message {
             warning.stringValue = message
         } else if state.providers.isEmpty {
-            warning.stringValue = state.isRefreshing ? "Reading quota from the provider…" : integration.setupHint
+            warning.stringValue = integration.setupHint
         } else {
             warning.stringValue = state.providers.first?.sourceLabel ?? ""
         }
@@ -282,7 +283,6 @@ private final class IntegrationGroupView: NSView {
 
 private final class AccountQuotaView: NSStackView {
     var onReset: (() -> Void)?
-    private let statusLabel = quotaLabel("", size: 10.5, secondary: true)
     private let summary = LimitQuotaView()
     private let details = NSStackView()
     private let resetButton = NSButton(title: "Use reset credit", target: nil, action: nil)
@@ -310,18 +310,17 @@ private final class AccountQuotaView: NSStackView {
             child.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
         }
         addArrangedSubview(resetButton)
-        addArrangedSubview(statusLabel)
     }
 
     required init?(coder: NSCoder) { nil }
 
-    func update(_ provider: ProviderUsage, mode: UsageDisplayMode, expanded: Bool, canReset: Bool, status: AccountStatus?) {
-        statusLabel.isHidden = status?.message == nil && status?.isRefreshing != true
-        statusLabel.stringValue = status?.isRefreshing == true ? "Refreshing…" : "Cached"
-        statusLabel.toolTip = status?.message
+    func update(_ provider: ProviderUsage, mode: UsageDisplayMode, expanded: Bool, canReset: Bool, status: AccountStatus?, attention: String? = nil) {
+        let refreshing = status?.isRefreshing == true
+        summary.setRefreshing(refreshing)
         summary.update(provider.limitingWindow, mode: mode, integration: provider.integration,
                        title: provider.accountLabel ?? provider.integration.name,
-                       credits: provider.resetCredits?.applicableAvailableCount)
+                       credits: provider.resetCredits?.applicableAvailableCount,
+                       attention: refreshing ? nil : attention)
         details.isHidden = !expanded
         if expanded {
             while detailRows.count < provider.limits.count {
@@ -332,8 +331,15 @@ private final class AccountQuotaView: NSStackView {
             }
             for (index, row) in detailRows.enumerated() {
                 row.isHidden = index >= provider.limits.count
-                if index < provider.limits.count { row.update(provider.limits[index], mode: mode, integration: provider.integration) }
+                if index < provider.limits.count {
+                    row.setRefreshing(refreshing)
+                    row.update(provider.limits[index], mode: mode, integration: provider.integration)
+                } else {
+                    row.setRefreshing(false)
+                }
             }
+        } else {
+            detailRows.forEach { $0.setRefreshing(false) }
         }
         resetEligible = canReset && (provider.resetCredits?.applicableAvailableCount ?? 0) > 0 && provider.primary.usedPercent >= 100
         resetButton.isHidden = !expanded || provider.resetCredits == nil
@@ -387,11 +393,14 @@ private final class LimitQuotaView: NSView {
     private let reset = quotaLabel("", size: 11)
     private let creditsLabel = quotaLabel("", size: 11, weight: .medium)
     private let creditGroup = NSStackView()
+    private let attentionIcon = NSImageView(image: Symbols.image("exclamationmark.circle.fill", pointSize: 11)!)
     private let badge = NSStackView()
     private var progress: Double = 0
     private var usedPercent: Double = 0
     private var integration: IntegrationID = .codex
     private(set) var isActive = false
+    private var isRefreshing = false
+    private var shouldAnimate: Bool { window != nil && (isActive || isRefreshing) && !OpenCodeActivityMonitor.reduceMotion }
 
     init() {
         super.init(frame: .zero)
@@ -405,10 +414,13 @@ private final class LimitQuotaView: NSView {
         reset.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         let clock = NSImageView(image: Symbols.image("arrow.clockwise", pointSize: 11)!)
         let ticket = NSImageView(image: Symbols.image("ticket", pointSize: 12)!)
-        for icon in [clock, ticket] {
-            icon.contentTintColor = .labelColor
+        for icon in [clock, ticket, attentionIcon] {
+            icon.contentTintColor = icon === attentionIcon ? .systemOrange : .labelColor
             icon.widthAnchor.constraint(equalToConstant: 13).isActive = true
         }
+        attentionIcon.isHidden = true
+        attentionIcon.setAccessibilityElement(true)
+        attentionIcon.setAccessibilityRole(.image)
         creditGroup.orientation = .horizontal
         creditGroup.spacing = 4
         creditGroup.addArrangedSubview(ticket)
@@ -417,7 +429,7 @@ private final class LimitQuotaView: NSView {
         badge.alignment = .centerY
         badge.spacing = 5
         badge.edgeInsets = NSEdgeInsets(top: 3, left: 6, bottom: 3, right: 6)
-        for child in [clock, reset, creditGroup] { badge.addArrangedSubview(child) }
+        for child in [attentionIcon, clock, reset, creditGroup] { badge.addArrangedSubview(child) }
         badge.setContentCompressionResistancePriority(.required, for: .horizontal)
         reset.setContentCompressionResistancePriority(.required, for: .horizontal)
         creditsLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -453,7 +465,7 @@ private final class LimitQuotaView: NSView {
         NSColor(white: dark ? 0.26 : 0.82, alpha: 1).setStroke()
         let stripes = NSBezierPath()
         stripes.lineWidth = 1
-        let crawl = (isActive && !OpenCodeActivityMonitor.reduceMotion)
+        let crawl = shouldAnimate
             ? CGFloat(CACurrentMediaTime().truncatingRemainder(dividingBy: 1.1) / 1.1) * 6
             : 0
         for x in stride(from: -bounds.height + crawl, through: bounds.width, by: 6) {
@@ -464,11 +476,11 @@ private final class LimitQuotaView: NSView {
         NSGraphicsContext.restoreGraphicsState()
         let fill = AppBranding.progressColor(forUsedPercent: Int(usedPercent), integration: integration)
             .withAlphaComponent(dark ? (integration == .xai && usedPercent < 80 ? 0.4 : 0.65) : 0.3)
-        if isActive {
+        if isActive || isRefreshing {
             let now = CACurrentMediaTime()
             let sweep = now.truncatingRemainder(dividingBy: 2.2) / 2.2
             let pulse = 0.5 + 0.5 * sin(sweep * 2 * .pi)
-            if !OpenCodeActivityMonitor.reduceMotion {
+            if shouldAnimate {
                 layer?.shadowColor = fill.cgColor
                 layer?.shadowOffset = .zero
                 layer?.shadowRadius = 8 + 6 * pulse
@@ -476,13 +488,13 @@ private final class LimitQuotaView: NSView {
             } else {
                 layer?.shadowOpacity = 0
             }
-            fill.withAlphaComponent(fill.alphaComponent + (OpenCodeActivityMonitor.reduceMotion ? 0.12 : 0.08 * pulse)).setFill()
+            fill.withAlphaComponent(fill.alphaComponent + (shouldAnimate ? 0.08 * pulse : 0.12)).setFill()
         } else {
             layer?.shadowOpacity = 0
             fill.setFill()
         }
         filledPath.fill()
-        if isActive, !OpenCodeActivityMonitor.reduceMotion {
+        if shouldAnimate {
             NSGraphicsContext.saveGraphicsState()
             filledPath.addClip()
             let sweep = CACurrentMediaTime().truncatingRemainder(dividingBy: 2.2) / 2.2
@@ -504,13 +516,23 @@ private final class LimitQuotaView: NSView {
     func setActive(_ active: Bool) {
         guard isActive != active else { return }
         isActive = active
-        if active, !OpenCodeActivityMonitor.reduceMotion { ActivityRedraw.shared.add(self) }
+        syncRedraw()
+    }
+
+    func setRefreshing(_ refreshing: Bool) {
+        guard isRefreshing != refreshing else { return }
+        isRefreshing = refreshing
+        syncRedraw()
+    }
+
+    private func syncRedraw() {
+        if shouldAnimate { ActivityRedraw.shared.add(self) }
         else { ActivityRedraw.shared.remove(self) }
         needsDisplay = true
     }
 
     func update(_ limit: ProviderLimit, mode: UsageDisplayMode, integration: IntegrationID,
-                title: String? = nil, credits: Int? = nil) {
+                title: String? = nil, credits: Int? = nil, attention: String? = nil) {
         let shown = mode == .used ? limit.usedPercent : limit.remainingPercent
         name.stringValue = title ?? limit.displayLabel
         name.toolTip = name.stringValue
@@ -524,16 +546,19 @@ private final class LimitQuotaView: NSView {
         creditGroup.isHidden = credits == nil
         creditsLabel.stringValue = credits.map(String.init) ?? ""
         creditGroup.toolTip = credits.map { "\($0) reset credits available" }
+        attentionIcon.isHidden = attention == nil
+        attentionIcon.toolTip = attention
+        attentionIcon.setAccessibilityLabel(attention)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("\(name.stringValue), \(value.stringValue) \(mode.rawValue), \(limit.displayLabel), \(reset.toolTip ?? "")" + (credits.map { ", \($0) reset credits available" } ?? ""))
+        setAccessibilityLabel("\(name.stringValue), \(value.stringValue) \(mode.rawValue), \(limit.displayLabel), \(reset.toolTip ?? "")" + (credits.map { ", \($0) reset credits available" } ?? "") + (isRefreshing ? ", updating" : "") + (attention.map { ", \($0)" } ?? ""))
         needsDisplay = true
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil { ActivityRedraw.shared.remove(self) }
-        else if isActive, !OpenCodeActivityMonitor.reduceMotion { ActivityRedraw.shared.add(self) }
+        else if shouldAnimate { ActivityRedraw.shared.add(self) }
     }
 }
 

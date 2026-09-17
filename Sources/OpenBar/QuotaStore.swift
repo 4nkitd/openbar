@@ -88,7 +88,7 @@ final class QuotaStore {
                 result.configurationID = id
                 return result
             }
-            states[id] = IntegrationState(providers: providers, updatedAt: entry.updatedAt, message: "Cached. Live check pending.", retryAt: entry.updatedAt.addingTimeInterval(account.integration == .claude ? 300 : 60))
+            states[id] = IntegrationState(providers: providers, updatedAt: entry.updatedAt, retryAt: entry.updatedAt.addingTimeInterval(account.integration == .claude ? 300 : 60))
         }
         hasRestored = true
         persist()

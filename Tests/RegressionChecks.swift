@@ -403,7 +403,7 @@ private struct RegressionChecks {
         states[.claude]?.updatedAt = Date().addingTimeInterval(-3600)
         controller.update(states: states, enabled: enabled, displayMode: .used)
         let visibleStrings = descendants(controller.view).compactMap { ($0 as? NSTextField)?.stringValue }
-        try check(!visibleStrings.contains(where: { $0.contains("Last success") || $0.contains("Saved usage") }), "Do not show fetch-age prose in the popover")
+        try check(!visibleStrings.contains(where: { $0.contains("Last success") || $0.contains("Saved usage") || $0.contains("Cached") || $0.contains("Live check pending") }), "Do not show fetch-age prose in the popover")
         window.setContentSize(controller.preferredContentSize)
         try snapshot(controller.view, to: output.appendingPathComponent("popover-error.png"))
         let compactProviders = [49.0, 2, 98, 0, 100].enumerated().map { index, used in
