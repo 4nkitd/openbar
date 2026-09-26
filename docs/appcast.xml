@@ -1,0 +1,16 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>OpenBar</title>
+        <link>https://github.com/4nkitd/openbar</link>
+        <item>
+            <title>0.1.9</title>
+            <pubDate>Sat, 26 Sep 2026 21:30:04 +0530</pubDate>
+            <sparkle:version>9</sparkle:version>
+            <sparkle:shortVersionString>0.1.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/4nkitd/openbar/releases/download/v0.1.9/OpenBar-0.1.9-macos-arm64.zip" length="3396668" type="application/octet-stream" sparkle:edSignature="uE+7p1jRSbCL0VjTHJP/8jqUdCOzohHY+xuvnUwmUihatkqE9i4UEGQlZNMe+NeIfFwSUCw7FDpuN4lMse/ZAQ=="/>
+        </item>
+    </channel>
+</rss>

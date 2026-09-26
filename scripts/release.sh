@@ -33,6 +33,7 @@ if [[ -n "${SPARKLE_FEED_URL:-}" && -n "${SPARKLE_PUBLIC_KEY:-}" ]]; then
     "$UPDATES_DIR"
   swift scripts/validate-update.swift archive "$VERSION" "$BUILD_NUMBER" "$UPDATES_DIR/$ARCHIVE_NAME" "$UPDATES_DIR/appcast.xml"
   cp "$UPDATES_DIR/appcast.xml" "$ROOT_DIR/appcast.xml"
+  if [[ -d "$ROOT_DIR/docs" ]]; then cp "$UPDATES_DIR/appcast.xml" "$ROOT_DIR/docs/appcast.xml"; fi
 fi
 
 cp "$UPDATES_DIR/$ARCHIVE_NAME" "$ROOT_DIR/dist/$ARCHIVE_NAME"
