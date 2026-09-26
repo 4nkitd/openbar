@@ -17,7 +17,7 @@ brew install --cask 4nkitd/tap/openbar
 open -a OpenBar
 ```
 
-Or download [OpenBar v0.1.8](https://github.com/4nkitd/openbar/releases/download/v0.1.8/OpenBar-0.1.8-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
+Or download [OpenBar v0.1.9](https://github.com/4nkitd/openbar/releases/download/v0.1.9/OpenBar-0.1.9-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
 
 This release is ad-hoc signed and is not notarized. If Gatekeeper blocks the app, review the download source and allow it under **System Settings → Privacy & Security → Open Anyway**. Homebrew updates are available through `brew upgrade --cask 4nkitd/tap/openbar`.
 
@@ -82,7 +82,9 @@ All quota collection uses in-process HTTP requests to the issuing provider. Ther
 
 Background Keychain reads do not show authorization dialogs or wait for permission. If an older sign-in is protected by another app's access controls, use that account's existing credential file or explicitly allow OpenBar in Keychain Access. A readable account can continue refreshing while another sign-in is inaccessible.
 
-Manual refreshes observe a minimum interval of one minute per account, or five minutes for Claude. Failures back off up to 30 minutes, and a longer server `Retry-After` is respected. Opening the popover or changing display preferences does not trigger requests.
+Manual refreshes observe a minimum interval of one minute per account, or five minutes for Claude. Failures back off up to 30 minutes, and a longer server `Retry-After` is respected. Opening the popover or changing display preferences does not trigger provider quota requests.
+
+OpenCode activity streaming and service discovery run only while the popover is open. Closing it cancels activity requests and stops animation timers, including refresh shimmers. Quota polling and notifications continue at the configured interval. Activity indicators resume when new OpenCode events arrive after reopening.
 
 ## Build and run
 
@@ -106,15 +108,23 @@ The blue-dot icon is retained from the original project. Build output and local 
 
 ```bash
 bash scripts/check.sh
+bash scripts/check-updates.sh
 ```
 
-The regression checks compile the actual sources with `swiftc` and work with Command Line Tools alone, without XCTest. They use fixtures and an intercepted HTTP transport, not live credentials. Checks cover response parsing, account-specific credential routing, independent failures and retry delays, cancellation/removal, migration, UI view reuse, expandable scrolling, and light/dark/error/empty states. Test screenshots and caches go to a temporary directory, or `CHECK_OUTPUT_DIR`.
+The regression checks compile the actual sources with `swiftc` and work with Command Line Tools alone, without XCTest. They use fixtures and an intercepted HTTP transport, not live credentials. Checks cover response parsing, account-specific credential routing, independent failures and retry delays, cancellation/removal, migration, activity-monitor lifecycle, hidden animation shutdown, UI view reuse, expandable scrolling, and light/dark/error/empty states. Test screenshots and caches go to a temporary directory, or `CHECK_OUTPUT_DIR`. The update checks require Sparkle from a prior `swift build`; they exercise feed discovery through the real updater with a loopback HTTP server and verify release-signature validation with temporary fixture keys.
 
 ### Updates and releases
 
-Automatic updates are disabled by default. OpenBar does not use CodexBar Lite's update feed or signing key. The checked-in `appcast.xml` is an empty OpenBar feed until a release is created.
+Automatic updates require a build configured with an OpenBar HTTPS feed and public signing key. The current download and unconfigured local builds need a manual or Homebrew upgrade. OpenBar does not use CodexBar Lite's update feed or signing key. The checked-in `appcast.xml` is an empty OpenBar feed until a signed release is created.
 
-`scripts/release.sh <version> <build-number>` creates a platform-specific release ZIP and prints its SHA-256. To also generate a Sparkle feed, set an accessible HTTPS `SPARKLE_FEED_URL` and matching `SPARKLE_PUBLIC_KEY`, with the matching signing key in Keychain. No release credentials are bundled.
+`scripts/release.sh <version> <build-number>` creates a platform-specific release ZIP and prints its SHA-256. Build numbers must increase beyond every item in the existing feed. To generate a Sparkle feed:
+
+1. Create a dedicated signing key once with `.build/artifacts/sparkle/Sparkle/bin/generate_keys --account openbar`. Back up the private key securely. It stays in Keychain.
+2. Set `SPARKLE_FEED_URL` to the HTTPS URL where you will publish `appcast.xml`, and `SPARKLE_PUBLIC_KEY` to the public key printed by Sparkle. If using an existing Keychain account, set `SPARKLE_KEY_ACCOUNT` to that account name.
+3. Run `scripts/release.sh <version> <build-number>`. The script preserves existing feed entries subject to Sparkle's retention policy, generates the new item, and verifies its signature against the configured public key and exact archive bytes before replacing the root feed.
+4. Upload the ZIP to the matching GitHub release first, then publish `appcast.xml` at the configured feed URL. Install this configured build once through Homebrew or a manual download on Macs running an older build without an updater feed.
+
+Configured builds check daily by default. General settings uses Sparkle's saved automatic-check preference, including migration of an earlier OpenBar opt-out. Manual checks remain available when automatic checks are off, and update controls reflect whether Sparkle is busy. Sparkle presents available updates for installation. No private release keys are bundled.
 
 ## Credits
 

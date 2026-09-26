@@ -12,6 +12,7 @@ extension Notification.Name {
 
 final class SettingsStore {
     static let shared = SettingsStore()
+    static let automaticUpdateChecksKey = "SUEnableAutomaticChecks"
 
     private enum Key {
         static let refreshInterval = "refreshInterval"
@@ -42,10 +43,11 @@ final class SettingsStore {
                 defaults.setPersistentDomain(migrated, forName: AppBranding.bundleIdentifier)
             }
         }
+        Self.migrateUpdatePreference(in: defaults)
         defaults.register(defaults: [
             Key.refreshInterval: 300.0,
             Key.displayMode: UsageDisplayMode.used.rawValue,
-            Key.checkForUpdates: true,
+            Self.automaticUpdateChecksKey: true,
             Key.notifyAt80: true,
             Key.notifyAt90: true,
             Key.notifyWhenExhausted: true,
@@ -70,6 +72,12 @@ final class SettingsStore {
         return result
     }
 
+    static func migrateUpdatePreference(in defaults: UserDefaults) {
+        guard defaults.object(forKey: automaticUpdateChecksKey) == nil,
+              let previous = defaults.object(forKey: Key.checkForUpdates) as? Bool else { return }
+        defaults.set(previous, forKey: automaticUpdateChecksKey)
+    }
+
     var refreshInterval: TimeInterval {
         get { defaults.double(forKey: Key.refreshInterval) }
         set { set(newValue, forKey: Key.refreshInterval) }
@@ -81,8 +89,8 @@ final class SettingsStore {
     }
 
     var checkForUpdates: Bool {
-        get { defaults.bool(forKey: Key.checkForUpdates) }
-        set { set(newValue, forKey: Key.checkForUpdates) }
+        get { defaults.bool(forKey: Self.automaticUpdateChecksKey) }
+        set { set(newValue, forKey: Self.automaticUpdateChecksKey) }
     }
 
     var notifyAt80: Bool {
@@ -194,10 +202,10 @@ final class SettingsStore {
 
     private func set(_ value: Any, forKey key: String) {
         defaults.set(value, forKey: key)
-        notifyChanged()
+        notifyChanged(key: key)
     }
 
-    private func notifyChanged() {
-        NotificationCenter.default.post(name: .openBarSettingsDidChange, object: self)
+    private func notifyChanged(key: String? = nil) {
+        NotificationCenter.default.post(name: .openBarSettingsDidChange, object: self, userInfo: key.map { ["key": $0] })
     }
 }

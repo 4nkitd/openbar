@@ -82,27 +82,31 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
     var onChange: (() -> Void)?
     private(set) var active: Set<IntegrationID> = []
     private let files: [URL]
-    private var session: URLSession!
+    private let configuration: URLSessionConfiguration
+    private var session: URLSession?
     private var task: URLSessionDataTask?
     private var endpoint: OpenCodeServiceEndpoint?
     private var remainder = ""
     private var lastBeat: [IntegrationID: Date] = [:]
     private var providers: [String: IntegrationID] = [:]
-    private var inflight = Set<String>()
+    private var resolutions: [String: URLSessionDataTask] = [:]
+    private var unsupportedUntil: [String: Date] = [:]
+    private var generation = UUID()
     private var poll: Timer?
     private var expiry: Timer?
     private var reconnect: Timer?
     private var backoff: TimeInterval = 1
-    private var lastSignature = ""
+    private var wakeObserver: NSObjectProtocol?
 
-    init(files: [URL] = OpenCodeActivityMonitor.serviceFiles()) {
+    init(files: [URL] = OpenCodeActivityMonitor.serviceFiles(), configuration: URLSessionConfiguration = .ephemeral) {
         self.files = files
+        self.configuration = configuration
         super.init()
-        let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 120
         configuration.timeoutIntervalForResource = 60 * 60 * 24
         configuration.waitsForConnectivity = false
-        session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        configuration.urlCache = nil
+        configuration.httpShouldSetCookies = false
     }
 
     nonisolated static func serviceFiles() -> [URL] {
@@ -120,11 +124,12 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
 
     func start() {
         guard poll == nil else { return }
+        session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
         poll = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.reconcile() }
         }
         poll?.tolerance = 0.5
-        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.reconnectNow() }
         }
         reconcile()
@@ -133,27 +138,42 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
     func stop() {
         poll?.invalidate()
         poll = nil
+        if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
+        wakeObserver = nil
+        resetConnection()
+        session?.invalidateAndCancel()
+        session = nil
+        endpoint = nil
+    }
+
+    private func resetConnection() {
+        generation = UUID()
         reconnect?.invalidate()
         reconnect = nil
         expiry?.invalidate()
         expiry = nil
         task?.cancel()
         task = nil
-        endpoint = nil
+        for resolution in resolutions.values { resolution.cancel() }
+        resolutions.removeAll()
+        providers.removeAll()
+        unsupportedUntil.removeAll()
         remainder = ""
         lastBeat = [:]
         publish()
     }
 
     private func reconcile() {
-        guard let next = loadEndpoint(), next != endpoint else {
-            if endpoint == nil { scheduleReconnect() }
-            if task == nil, endpoint != nil { connect() }
+        guard poll != nil else { return }
+        let next = loadEndpoint()
+        guard next != endpoint else {
+            if task == nil, reconnect == nil, endpoint != nil { connect() }
             return
         }
+        resetConnection()
         endpoint = next
         backoff = 1
-        connect()
+        if next != nil { connect() }
     }
 
     private func loadEndpoint() -> OpenCodeServiceEndpoint? {
@@ -165,31 +185,34 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
     }
 
     private func reconnectNow() {
-        reconnect?.invalidate()
-        reconnect = nil
-        backoff = 1
-        connect()
+        guard poll != nil else { return }
+        resetConnection()
+        endpoint = nil
+        reconcile()
     }
 
     private func scheduleReconnect() {
-        guard reconnect == nil, task == nil else { return }
+        guard poll != nil, endpoint != nil, reconnect == nil, task == nil else { return }
+        let generation = generation
         let delay = backoff
         backoff = min(15, max(1, backoff * 2))
         reconnect = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             Task { @MainActor in
-                self?.reconnect = nil
-                self?.connect()
+                guard let self, self.generation == generation else { return }
+                self.reconnect = nil
+                self.connect()
             }
         }
     }
 
     private func connect() {
+        guard poll != nil, let session else { return }
         reconnect?.invalidate()
         reconnect = nil
         task?.cancel()
         task = nil
         remainder = ""
-        guard let endpoint else { scheduleReconnect(); return }
+        guard let endpoint else { return }
         var request = URLRequest(url: endpoint.eventURL)
         request.setValue(endpoint.authorization, forHTTPHeaderField: "Authorization")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -234,21 +257,28 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
     }
 
     private func resolve(_ sessionID: String) {
-        guard inflight.insert(sessionID).inserted, let endpoint else { return }
+        guard resolutions[sessionID] == nil, (unsupportedUntil[sessionID] ?? .distantPast) <= Date(), let endpoint, let session else { return }
+        let generation = generation
         var request = URLRequest(url: endpoint.sessionURL(sessionID))
+        request.timeoutInterval = 10
         request.setValue(endpoint.authorization, forHTTPHeaderField: "Authorization")
-        session.dataTask(with: request) { [weak self] data, _, _ in
+        let resolution = session.dataTask(with: request) { [weak self] data, response, _ in
             Task { @MainActor in
-                guard let self else { return }
-                self.inflight.remove(sessionID)
-                guard let data,
-                      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let provider = OpenCodeEvent.providerID(fromSession: object),
-                      let integration = IntegrationID.matchingOpenCodeProvider(provider) else { return }
+                guard let self, self.generation == generation else { return }
+                self.resolutions[sessionID] = nil
+                guard (response as? HTTPURLResponse)?.statusCode == 200, let data,
+                       let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let provider = OpenCodeEvent.providerID(fromSession: object) else { return }
+                guard let integration = IntegrationID.matchingOpenCodeProvider(provider) else {
+                    self.unsupportedUntil[sessionID] = Date().addingTimeInterval(Self.grace)
+                    return
+                }
                 self.providers[sessionID] = integration
                 self.beat(integration)
             }
-        }.resume()
+        }
+        resolutions[sessionID] = resolution
+        resolution.resume()
     }
 
     private func beat(_ integration: IntegrationID) {
@@ -258,13 +288,18 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
     }
 
     private func scheduleExpiry() {
-        expiry?.invalidate()
+        guard expiry == nil else { return }
         let cutoff = Date().addingTimeInterval(-Self.grace)
         lastBeat = lastBeat.filter { $0.value >= cutoff }
         guard let oldest = lastBeat.values.min() else { publish(); return }
         let delay = max(0.05, oldest.addingTimeInterval(Self.grace).timeIntervalSinceNow)
+        let generation = generation
         expiry = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.scheduleExpiry() }
+            Task { @MainActor in
+                guard let self, self.generation == generation else { return }
+                self.expiry = nil
+                self.scheduleExpiry()
+            }
         }
         publish()
     }
@@ -272,9 +307,7 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
     private func publish() {
         let cutoff = Date().addingTimeInterval(-Self.grace)
         let next = Set(lastBeat.compactMap { $0.value >= cutoff ? $0.key : nil })
-        let signature = next.map(\.rawValue).sorted().joined(separator: ",")
-        guard signature != lastSignature else { return }
-        lastSignature = signature
+        guard next != active else { return }
         active = next
         onChange?()
     }

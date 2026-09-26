@@ -26,6 +26,7 @@ final class SettingsWindowController: NSWindowController, NSToolbarDelegate {
 
     private let settings: SettingsStore
     private let onCheckForUpdates: () -> Void
+    private let updatesConfigured: () -> Bool
     private let canCheckForUpdates: () -> Bool
     private let tabs = NSTabView()
     private let accountsView: AccountsPreferencesView
@@ -36,9 +37,11 @@ final class SettingsWindowController: NSWindowController, NSToolbarDelegate {
 
     init(settings: SettingsStore, onCheckForUpdates: @escaping () -> Void, onSignIn: @escaping () -> Void,
          onCredentialsChanged: @escaping (String) -> Void, onOAuthChanged: @escaping () -> Void,
+         updatesConfigured: @escaping () -> Bool,
          canCheckForUpdates: @escaping () -> Bool) {
         self.settings = settings
         self.onCheckForUpdates = onCheckForUpdates
+        self.updatesConfigured = updatesConfigured
         self.canCheckForUpdates = canCheckForUpdates
         accountsView = AccountsPreferencesView(settings: settings, onSignIn: onSignIn,
                                               onCredentialsChanged: onCredentialsChanged, onOAuthChanged: onOAuthChanged)
@@ -147,22 +150,26 @@ final class SettingsWindowController: NSWindowController, NSToolbarDelegate {
             buttons,
             settingsCaption("No browser cookies, telemetry or third-party backend. Built on CodexBar Lite, with integration references from Headroom and OpenCode Bar. Independent of all providers."),
             updateButton,
-            settingsCaption(canCheckForUpdates() ? "Updates are verified by Sparkle." : "Automatic updates are not configured for this build.")
+            settingsCaption(updatesConfigured() ? "Updates are verified by Sparkle." : "Automatic updates are not configured for this build.")
         ])
     }
 
     private func sync() {
         toggles["login"]?.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        toggles["updates"]?.state = settings.checkForUpdates ? .on : .off
-        toggles["updates"]?.isEnabled = canCheckForUpdates()
+        updateUpdaterState()
         toggles["80"]?.state = settings.notifyAt80 ? .on : .off
         toggles["90"]?.state = settings.notifyAt90 ? .on : .off
         toggles["exhausted"]?.state = settings.notifyWhenExhausted ? .on : .off
         toggles["reset"]?.state = settings.notifyWhenReset ? .on : .off
         refreshPopup.selectItem(at: [60.0, 300, 900, 1800].firstIndex(of: settings.refreshInterval) ?? 1)
         modePopup.selectItem(at: settings.displayMode == .used ? 0 : 1)
-        updateButton.isEnabled = canCheckForUpdates()
         accountsView.reload()
+    }
+
+    func updateUpdaterState() {
+        toggles["updates"]?.state = settings.checkForUpdates ? .on : .off
+        toggles["updates"]?.isEnabled = updatesConfigured()
+        updateButton.isEnabled = canCheckForUpdates()
     }
 
     @objc private func refreshChanged() { settings.refreshInterval = [60.0, 300, 900, 1800][max(0, refreshPopup.indexOfSelectedItem)] }

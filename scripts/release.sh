@@ -18,6 +18,7 @@ UPDATES_DIR="$ROOT_DIR/dist/releases/v$VERSION"
 SPARKLE_TOOLS="$ROOT_DIR/.build/artifacts/sparkle/Sparkle/bin"
 
 cd "$ROOT_DIR"
+swift scripts/validate-update.swift build "$BUILD_NUMBER" "$ROOT_DIR/appcast.xml"
 BUILD_ONLY=1 APP_VERSION="$VERSION" BUILD_NUMBER="$BUILD_NUMBER" ./scripts/install.sh
 
 mkdir -p "$UPDATES_DIR"
@@ -25,9 +26,12 @@ codesign --verify --deep --strict "$ROOT_DIR/dist/$APP_NAME.app"
 ditto -c -k --sequesterRsrc --keepParent "$ROOT_DIR/dist/$APP_NAME.app" "$UPDATES_DIR/$ARCHIVE_NAME"
 
 if [[ -n "${SPARKLE_FEED_URL:-}" && -n "${SPARKLE_PUBLIC_KEY:-}" ]]; then
+  cp "$ROOT_DIR/appcast.xml" "$UPDATES_DIR/appcast.xml"
   "$SPARKLE_TOOLS/generate_appcast" \
+    --account "${SPARKLE_KEY_ACCOUNT:-openbar}" \
     --download-url-prefix "https://github.com/4nkitd/openbar/releases/download/v$VERSION/" \
     "$UPDATES_DIR"
+  swift scripts/validate-update.swift archive "$VERSION" "$BUILD_NUMBER" "$UPDATES_DIR/$ARCHIVE_NAME" "$UPDATES_DIR/appcast.xml"
   cp "$UPDATES_DIR/appcast.xml" "$ROOT_DIR/appcast.xml"
 fi
 

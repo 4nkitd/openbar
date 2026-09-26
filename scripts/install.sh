@@ -16,6 +16,10 @@ FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 PLIST="$CONTENTS_DIR/Info.plist"
 
+[[ "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Version must use X.Y.Z" >&2; exit 1; }
+[[ "$BUILD_NUMBER" =~ ^[0-9]+$ && "$BUILD_NUMBER" -gt 0 ]] || { echo "Build number must be a positive integer" >&2; exit 1; }
+swift "$ROOT_DIR/scripts/validate-update.swift" configuration
+
 echo "Building release binary..."
 cd "$ROOT_DIR"
 swift build -c release
@@ -82,6 +86,7 @@ if [[ -n "${SPARKLE_FEED_URL:-}" || -n "${SPARKLE_PUBLIC_KEY:-}" ]]; then
   plutil -insert SUFeedURL -string "$SPARKLE_FEED_URL" "$PLIST"
   plutil -insert SUPublicEDKey -string "$SPARKLE_PUBLIC_KEY" "$PLIST"
   plutil -insert SUEnableAutomaticChecks -bool YES "$PLIST"
+  plutil -insert SUScheduledCheckInterval -integer 86400 "$PLIST"
   plutil -insert SUVerifyUpdateBeforeExtraction -bool YES "$PLIST"
 fi
 

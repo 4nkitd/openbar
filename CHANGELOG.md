@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.9
+
+- OpenCode activity streaming and service polling run only while the popover is open; closing it cancels activity requests and stops overlay/shimmer animation timers. Quota polling and notifications keep the configured interval.
+- Cooldown-blocked refresh attempts no longer trigger UI updates, and animated quotas stop drawing when hidden.
+- Update settings now follow Sparkle's own saved automatic-check preference (existing opt-outs migrate once), update controls reflect whether Sparkle is ready, and configured builds check the update feed daily.
+- Release tooling: builds require an HTTPS feed plus a valid 32-byte Ed25519 public key before bundling, preserve older feed entries, refuse non-increasing build numbers, and verify the archive's Ed25519 signature against the configured public key before replacing the feed.
+- Added `scripts/check-updates.sh`: real Sparkle feed discovery against a loopback server plus signature, wrong-key, tampering and version checks.
+
 ## 0.1.8
 
 - Quota bars shimmer while a live check is in flight instead of showing Refreshing or Updating copy.

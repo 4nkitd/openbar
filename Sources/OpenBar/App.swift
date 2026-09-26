@@ -4,7 +4,7 @@ import ServiceManagement
 
 @main
 @MainActor
-final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSMenuItemValidation {
     static func main() {
         let app = NSApplication.shared
         let delegate = OpenBarApp()
@@ -23,6 +23,7 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let controller = UsagePopoverViewController()
     private var actionsMenu: NSMenu?
     private var updater: SPUStandardUpdaterController?
+    private var updaterObservation: NSKeyValueObservation?
     private var refreshTimer: Timer?
     private var loginTimer: Timer?
     private var keyMonitor: Any?
@@ -70,7 +71,6 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             Task { @MainActor in self?.store.refresh() }
         }
         settings.importCompatibleOpenCodeAccounts()
-        activity.start()
         store.setAccounts(settings.enabledAccounts)
         Task {
             if ProcessInfo.processInfo.arguments.contains("--import-google-oauth-clients") {
@@ -91,9 +91,20 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func configureUpdater() {
         guard Bundle.main.bundleURL.pathExtension == "app",
-              Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil,
-              Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") != nil else { return }
-        updater = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+              let feed = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
+              let url = URL(string: feed), url.scheme == "https", url.host?.isEmpty == false,
+              let key = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String,
+              Data(base64Encoded: key)?.count == 32 else { return }
+        let controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
+        do {
+            try controller.updater.start()
+            updater = controller
+            updaterObservation = controller.updater.observe(\.canCheckForUpdates, options: [.new]) { [weak self] _, _ in
+                Task { @MainActor in self?.settingsWindow?.updateUpdaterState() }
+            }
+        } catch {
+            FileHandle.standardError.write(Data("Updater could not start: \(error.localizedDescription)\n".utf8))
+        }
     }
 
     private func configureTimer() {
@@ -118,7 +129,7 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
         }
         if popover.isShown { updatePopover() }
-        settingsWindow?.updateStatuses(store.states)
+        if settingsWindow?.window?.isVisible == true { settingsWindow?.updateStatuses(store.states) }
         let candidates = store.accounts.flatMap { account in (store.states[account.id]?.providers ?? []).map { ($0, store.states[account.id]) } }
         let selected = candidates.max { $0.0.limitingWindow.usedPercent < $1.0.limitingWindow.usedPercent }
         let warning = store.accounts.contains { store.states[$0.id]?.message != nil }
@@ -142,9 +153,11 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         controller.update(states: store.presentationStates, enabled: store.enabled, displayMode: settings.displayMode, active: activity.active)
     }
 
-    @objc private func settingsChanged() {
+    @objc private func settingsChanged(_ notification: Notification) {
         configureTimer()
-        updater?.updater.automaticallyChecksForUpdates = settings.checkForUpdates
+        if notification.userInfo?["key"] as? String == SettingsStore.automaticUpdateChecksKey {
+            updater?.updater.automaticallyChecksForUpdates = settings.checkForUpdates
+        }
         notifications.requestAuthorizationIfNeeded()
         let added = settings.enabledAccounts.filter { !store.accounts.contains($0) }
         if store.accounts != settings.enabledAccounts { store.setAccounts(settings.enabledAccounts) }
@@ -183,7 +196,14 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     @objc private func refresh() { store.refresh() }
     @objc private func quit() { NSApp.terminate(nil) }
-    @objc private func checkForUpdates() { updater?.checkForUpdates(nil) }
+    @objc private func checkForUpdates() {
+        guard updater?.updater.canCheckForUpdates == true else { return }
+        updater?.checkForUpdates(nil)
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        menuItem.action != #selector(checkForUpdates) || updater?.updater.canCheckForUpdates == true
+    }
 
     @objc private func showSettings() {
         popover.performClose(nil)
@@ -197,7 +217,8 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     guard let self else { return }
                     for account in self.store.accounts where account.integration == .antigravity { self.store.credentialsChanged(account.id) }
                 },
-                canCheckForUpdates: { [weak self] in self?.updater != nil }
+                updatesConfigured: { [weak self] in self?.updater != nil },
+                canCheckForUpdates: { [weak self] in self?.updater?.updater.canCheckForUpdates == true }
             )
         }
         settingsWindow?.updateStatuses(store.states)
@@ -243,6 +264,8 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func popoverDidShow(_ notification: Notification) {
+        controller.setPresented(true)
+        activity.start()
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, event.modifierFlags.contains(.command) else { return event }
@@ -257,6 +280,8 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
+        activity.stop()
+        controller.setPresented(false)
         if let monitor = keyMonitor { NSEvent.removeMonitor(monitor) }
         keyMonitor = nil
         controller.setActive([])

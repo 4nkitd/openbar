@@ -140,6 +140,8 @@ final class UsagePopoverViewController: NSViewController {
         for id in order { groups[id]?.setActive(active.contains(id)) }
     }
 
+    func setPresented(_ presented: Bool) { ActivityRedraw.shared.setPresented(presented) }
+
     func cancelResetConfirmation() { groups[.codex]?.cancelReset() }
     func showResetCreditResult(_ result: Result<ConsumeResetCreditsResponse, Error>, accountID: String) { groups[.codex]?.resetResult(result, accountID: accountID) }
     @objc private func refreshClicked() { onRefresh?() }
@@ -400,7 +402,8 @@ private final class LimitQuotaView: NSView {
     private var integration: IntegrationID = .codex
     private(set) var isActive = false
     private var isRefreshing = false
-    private var shouldAnimate: Bool { window != nil && (isActive || isRefreshing) && !OpenCodeActivityMonitor.reduceMotion }
+    private var wantsAnimation: Bool { window != nil && (isActive || isRefreshing) }
+    private var shouldAnimate: Bool { wantsAnimation && ActivityRedraw.shared.isPresented && !OpenCodeActivityMonitor.reduceMotion }
 
     init() {
         super.init(frame: .zero)
@@ -526,7 +529,7 @@ private final class LimitQuotaView: NSView {
     }
 
     private func syncRedraw() {
-        if shouldAnimate { ActivityRedraw.shared.add(self) }
+        if wantsAnimation { ActivityRedraw.shared.add(self) }
         else { ActivityRedraw.shared.remove(self) }
         needsDisplay = true
     }
@@ -558,7 +561,7 @@ private final class LimitQuotaView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil { ActivityRedraw.shared.remove(self) }
-        else if shouldAnimate { ActivityRedraw.shared.add(self) }
+        else if wantsAnimation { ActivityRedraw.shared.add(self) }
     }
 }
 
@@ -578,7 +581,7 @@ private final class ActivityEqualizerView: NSView {
 
     func setActive(_ active: Bool) {
         isActive = active
-        if active, !OpenCodeActivityMonitor.reduceMotion { ActivityRedraw.shared.add(self) }
+        if active, window != nil { ActivityRedraw.shared.add(self) }
         else { ActivityRedraw.shared.remove(self) }
         needsDisplay = true
     }
@@ -586,7 +589,7 @@ private final class ActivityEqualizerView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil { ActivityRedraw.shared.remove(self) }
-        else if isActive, !OpenCodeActivityMonitor.reduceMotion { ActivityRedraw.shared.add(self) }
+        else if isActive { ActivityRedraw.shared.add(self) }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -608,14 +611,34 @@ private final class ActivityEqualizerView: NSView {
 }
 
 @MainActor
-private final class ActivityRedraw {
+final class ActivityRedraw: NSObject {
     static let shared = ActivityRedraw()
     private var views = NSHashTable<NSView>.weakObjects()
     private var timer: Timer?
+    private(set) var isPresented = false
+    var isRunning: Bool { timer != nil }
+
+    private override init() {
+        super.init()
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(displayOptionsChanged), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+    }
+
+    func setPresented(_ presented: Bool) {
+        isPresented = presented
+        if presented { startIfNeeded() } else { stop() }
+    }
 
     func add(_ view: NSView) {
         views.add(view)
-        guard timer == nil else { return }
+        startIfNeeded()
+    }
+
+    private var visibleViews: [NSView] {
+        views.allObjects.filter { $0.window?.isVisible == true && !$0.isHiddenOrHasHiddenAncestor }
+    }
+
+    private func startIfNeeded() {
+        guard timer == nil, isPresented, !OpenCodeActivityMonitor.reduceMotion, !visibleViews.isEmpty else { return }
         let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
@@ -626,14 +649,24 @@ private final class ActivityRedraw {
 
     func remove(_ view: NSView) {
         views.remove(view)
-        if views.allObjects.isEmpty {
-            timer?.invalidate()
-            timer = nil
-        }
+        if visibleViews.isEmpty { stop() }
+    }
+
+    private func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    @objc private func displayOptionsChanged() {
+        stop()
+        for view in views.allObjects { view.needsDisplay = true }
+        startIfNeeded()
     }
 
     private func tick() {
-        for view in views.allObjects { view.needsDisplay = true }
+        let visible = visibleViews
+        guard isPresented, !OpenCodeActivityMonitor.reduceMotion, !visible.isEmpty else { stop(); return }
+        for view in visible { view.needsDisplay = true }
     }
 }
 

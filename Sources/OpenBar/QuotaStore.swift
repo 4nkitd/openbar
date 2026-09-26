@@ -141,12 +141,14 @@ final class QuotaStore {
     }
 
     func refresh(only: String? = nil, now: Date = Date()) {
+        var started = false
         for account in accounts where only == nil || account.id == only {
             let id = account.id
             guard tasks[id] == nil, (states[id]?.retryAt ?? .distantPast) <= now else { continue }
             let generation = UUID()
             generations[id] = generation
             states[id, default: IntegrationState()].isRefreshing = true
+            started = true
             tasks[id] = Task { [weak self, fetch] in
                 let result: Result<[ProviderUsage], Error>
                 do { result = .success(try await fetch(account)) } catch { result = .failure(error) }
@@ -155,7 +157,7 @@ final class QuotaStore {
                 self.apply(result, to: account, now: Date())
             }
         }
-        onChange?()
+        if started { onChange?() }
     }
 
     private func apply(_ result: Result<[ProviderUsage], Error>, to account: IntegrationAccount, now: Date) {

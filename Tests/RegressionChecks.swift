@@ -116,6 +116,64 @@ private final class AntigravityRefreshHTTPProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+private final class ActivityHTTPProtocol: URLProtocol {
+    private static let lock = NSLock()
+    private static var streams: [ActivityHTTPProtocol] = []
+    private static var requests: [String: Int] = [:]
+    private static var providers: [String: String] = [:]
+
+    static func setProvider(_ provider: String, for sessionID: String) {
+        lock.lock()
+        providers["/api/session/\(sessionID)"] = provider
+        lock.unlock()
+    }
+
+    static func count(_ path: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return requests[path, default: 0]
+    }
+
+    static var streamCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return streams.count
+    }
+
+    static func emit(_ sessionID: String) {
+        lock.lock()
+        let current = streams
+        lock.unlock()
+        let data = json("data: {\"type\":\"session.text.delta\",\"data\":{\"sessionID\":\"\(sessionID)\"}}\n\n")
+        for stream in current { stream.client?.urlProtocol(stream, didLoad: data) }
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let path = request.url!.path
+        Self.lock.lock()
+        Self.requests[path, default: 0] += 1
+        let provider = Self.providers[path] ?? (path.hasSuffix("unsupported") ? "google" : "xai")
+        Self.lock.unlock()
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": path == "/api/event" ? "text/event-stream" : "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        if path == "/api/event" {
+            Self.lock.lock()
+            Self.streams.append(self)
+            Self.lock.unlock()
+        } else {
+            client?.urlProtocol(self, didLoad: json("{\"data\":{\"model\":{\"providerID\":\"\(provider)\"}}}"))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+    override func stopLoading() {
+        Self.lock.lock()
+        Self.streams.removeAll { $0 === self }
+        Self.lock.unlock()
+    }
+}
+
 @main
 private struct RegressionChecks {
     @MainActor static func main() async throws {
@@ -230,7 +288,10 @@ private struct RegressionChecks {
         try await wait { store.states[codexAccount.id]?.isRefreshing == false }
         try check(store.states[claudeAccount.id]?.isRefreshing == true, "Fast provider must render before slow provider")
         try check(fresh == 1, "Fresh notification only")
+        var redundantChanges = 0
+        store.onChange = { redundantChanges += 1 }
         store.refresh()
+        try check(redundantChanges == 0, "A cooldown-only refresh must not trigger a UI update")
         let codexCalls = await probe.calls[codexAccount.id]
         try check(codexCalls == 1, "Manual refresh must obey cooldown")
         store.setAccounts([codexAccount])
@@ -336,6 +397,15 @@ private struct RegressionChecks {
         try check(multiStore.states[work.id] == nil, "Removed account must not reappear from a late response")
         let migrated = SettingsStore.migratedPreferences(current: ["displayMode": "used"], legacy: ["displayMode": "remaining", "integration.claude.enabled": true, "unrelated": "ignore"])
         try check(migrated["displayMode"] as? String == "used" && migrated["integration.claude.enabled"] as? Bool == true && migrated["unrelated"] == nil, "Rebrand migration preserves new choices and copies only known preferences")
+        let updateSuite = "dev.openbar.update-checks.\(UUID().uuidString)"
+        let updateDefaults = UserDefaults(suiteName: updateSuite)!
+        defer { updateDefaults.removePersistentDomain(forName: updateSuite) }
+        updateDefaults.set(false, forKey: "checkForUpdates")
+        SettingsStore.migrateUpdatePreference(in: updateDefaults)
+        try check(!updateDefaults.bool(forKey: SettingsStore.automaticUpdateChecksKey), "Migrate an existing update opt-out before Sparkle starts")
+        updateDefaults.set(true, forKey: SettingsStore.automaticUpdateChecksKey)
+        SettingsStore.migrateUpdatePreference(in: updateDefaults)
+        try check(updateDefaults.bool(forKey: SettingsStore.automaticUpdateChecksKey), "Never overwrite Sparkle's saved update preference with a legacy value")
         let oldCache = output.appendingPathComponent("old-cache.json")
         let newCache = output.appendingPathComponent("migrated-\(UUID().uuidString).json")
         try writePrivateData(JSONEncoder().encode([CachedQuota(integration: .codex, providers: [codex], updatedAt: Date())]), to: oldCache)
@@ -358,7 +428,42 @@ private struct RegressionChecks {
         try check(OpenCodeServiceEndpoint.parse(Data(#"{"url":"http://127.0.0.1:9","password":"secret","pid":1}"#.utf8)) != nil, "Local service.json is accepted")
         try check(OpenCodeServiceEndpoint.parse(Data(#"{"url":"http://example.com:9","password":"secret"}"#.utf8)) == nil, "Remote OpenCode URLs are rejected")
         try check(OpenCodeServiceEndpoint.parse(Data(#"{"url":"http://127.0.0.1:9","password":""}"#.utf8)) == nil, "Empty service passwords are rejected")
-        print("PASS OpenCode activity event parsing and local service discovery")
+        let serviceFile = output.appendingPathComponent("activity-service.json")
+        try writePrivateData(json(#"{"url":"http://127.0.0.1:9","password":"fixture"}"#), to: serviceFile)
+        let activityConfiguration = URLSessionConfiguration.ephemeral
+        activityConfiguration.protocolClasses = [ActivityHTTPProtocol.self]
+        let monitor = OpenCodeActivityMonitor(files: [serviceFile], configuration: activityConfiguration)
+        monitor.start()
+        monitor.start()
+        try await wait("Activity stream did not start") { ActivityHTTPProtocol.count("/api/event") == 1 }
+        try await wait("Activity stream response was not sent") { ActivityHTTPProtocol.streamCount == 1 }
+        ActivityHTTPProtocol.emit("ses_active")
+        try await wait("Activity event did not request metadata") { ActivityHTTPProtocol.count("/api/session/ses_active") == 1 }
+        try await wait("Activity provider was not resolved") { monitor.active == [.xai] }
+        ActivityHTTPProtocol.emit("ses_unsupported")
+        try await wait("Unsupported activity provider was not requested") { ActivityHTTPProtocol.count("/api/session/ses_unsupported") == 1 }
+        try await Task.sleep(nanoseconds: 30_000_000)
+        for _ in 0..<20 { ActivityHTTPProtocol.emit("ses_unsupported") }
+        try await Task.sleep(nanoseconds: 30_000_000)
+        try check(ActivityHTTPProtocol.count("/api/session/ses_unsupported") == 1, "Unsupported providers must not trigger a metadata request for every token")
+        ActivityHTTPProtocol.setProvider("xai", for: "ses_unsupported")
+        try await Task.sleep(nanoseconds: UInt64((OpenCodeActivityMonitor.grace + 0.1) * 1_000_000_000))
+        try await wait("Inactive provider did not expire") { monitor.active.isEmpty }
+        ActivityHTTPProtocol.emit("ses_unsupported")
+        try await wait("Unsupported session was not reconsidered after a provider switch") { ActivityHTTPProtocol.count("/api/session/ses_unsupported") == 2 && monitor.active == [.xai] }
+        monitor.stop()
+        try await wait("Activity stream was not canceled") { ActivityHTTPProtocol.streamCount == 0 }
+        try check(monitor.active.isEmpty, "Stopping activity monitoring clears active providers")
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+        try await Task.sleep(nanoseconds: 30_000_000)
+        try check(ActivityHTTPProtocol.count("/api/event") == 1, "Wake must not restart a stopped activity monitor")
+        monitor.start()
+        try await wait("Activity stream did not restart") { ActivityHTTPProtocol.count("/api/event") == 2 }
+        try await wait("Restarted activity stream response was not sent") { ActivityHTTPProtocol.streamCount == 1 }
+        ActivityHTTPProtocol.emit("ses_active")
+        try await wait("Activity provider was not resolved after restart") { monitor.active == [.xai] }
+        monitor.stop()
+        print("PASS OpenCode activity parsing, HTTP resolution, stop/wake/restart and unsupported-provider caching")
 
         let app = NSApplication.shared
         let appDelegate = CheckAppDelegate()
@@ -420,13 +525,25 @@ private struct RegressionChecks {
         window.appearance = NSAppearance(named: .aqua)
         try snapshot(controller.view, to: output.appendingPathComponent("popover-compact-light.png"))
         controller.setActive([.codex])
+        controller.setPresented(true)
         window.contentView?.layoutSubtreeIfNeeded()
         try check(descendants(controller.view).contains { $0.accessibilityLabel()?.localizedCaseInsensitiveContains("in use") == true }, "Active provider shows an in-use header indicator")
+        try check(ActivityRedraw.shared.isRunning == !OpenCodeActivityMonitor.reduceMotion, "Visible activity animates unless Reduce Motion is enabled")
+        var refreshingProvider = codex
+        refreshingProvider.configurationID = "refreshing-fixture"
+        let refreshingState = IntegrationState(providers: [refreshingProvider], isRefreshing: true, accountStatuses: ["refreshing-fixture": AccountStatus(label: "Fixture", message: nil, updatedAt: nil, isRefreshing: true)])
+        controller.update(states: [.codex: refreshingState], enabled: [.codex], displayMode: .used)
+        controller.setPresented(false)
+        try check(!ActivityRedraw.shared.isRunning, "Closing a refreshing popover stops the redraw timer immediately")
+        controller.setPresented(true)
+        try check(ActivityRedraw.shared.isRunning == !OpenCodeActivityMonitor.reduceMotion, "Reopening a refreshing popover resumes its animation")
         controller.setActive([])
         controller.update(states: [:], enabled: [], displayMode: .used)
+        try await wait { !ActivityRedraw.shared.isRunning }
+        controller.setPresented(false)
         window.setContentSize(controller.preferredContentSize)
         try snapshot(controller.view, to: output.appendingPathComponent("popover-empty.png"))
-        let preferences = SettingsWindowController(settings: .shared, onCheckForUpdates: {}, onSignIn: {}, onCredentialsChanged: { _ in }, onOAuthChanged: {}, canCheckForUpdates: { false })
+        let preferences = SettingsWindowController(settings: .shared, onCheckForUpdates: {}, onSignIn: {}, onCredentialsChanged: { _ in }, onOAuthChanged: {}, updatesConfigured: { false }, canCheckForUpdates: { false })
         preferences.updateStatuses(store.states)
         preferences.show()
         preferences.window?.appearance = NSAppearance(named: .darkAqua)
@@ -438,12 +555,12 @@ private struct RegressionChecks {
         print("ALL CHECKS PASSED")
     }
 
-    @MainActor private static func wait(_ predicate: () async -> Bool) async throws {
+    @MainActor private static func wait(_ message: String = "Timed out waiting for asynchronous check", _ predicate: () async -> Bool) async throws {
         for _ in 0..<1000 {
             if await predicate() { return }
             try await Task.sleep(nanoseconds: 1_000_000)
         }
-        throw CheckFailure(description: "Timed out waiting for asynchronous check")
+        throw CheckFailure(description: message)
     }
 
     @MainActor private static func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
