@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.10
+
+- Codex reset-credit badge shows the banked credit count — what the account holds, matching the official Codex app — instead of the currently-applicable subset, which reads zero until a rate-limit window is exhausted.
+- The Use reset credit button treats a missing or unreadable applicable count as redeemable from the banked balance, and unreadable counts never overstate redemption.
+
 ## 0.1.9
 
 - OpenCode activity streaming and service polling run only while the popover is open; closing it cancels activity requests and stops overlay/shimmer animation timers. Quota polling and notifications keep the configured interval.
