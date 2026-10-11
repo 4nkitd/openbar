@@ -108,6 +108,13 @@ struct ResetCredits: Codable {
     let availableCount: Int
     let applicableAvailableCount: Int?
 
+    // Applicable counts outside 0...availableCount are unreadable, and an omitted or null
+    // applicable count predates the field; both default to the banked count, never zero.
+    var redeemableNow: Int {
+        if let applicable = applicableAvailableCount, (0...max(0, availableCount)).contains(applicable) { return applicable }
+        return max(0, availableCount)
+    }
+
     enum CodingKeys: String, CodingKey {
         case availableCount = "available_count"
         case applicableAvailableCount = "applicable_available_count"

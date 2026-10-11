@@ -183,6 +183,17 @@ private struct RegressionChecks {
         try check(codex.limits.count == 4, "All Codex windows must be parsed")
         try check(codex.limitingWindow.usedPercent == 81, "Weekly exhaustion must not hide behind a healthy session")
         try check(codex.limits[2].displayLabel != codex.limits[3].displayLabel, "Custom windows need cadence labels")
+        let banked = try await service.parseCodex(json(#"{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":27,"limit_window_seconds":18000,"reset_at":1788780000}},"rate_limit_reset_credits":{"available_count":1,"applicable_available_count":0}}"#))
+        try check(banked.resetCredits?.availableCount == 1, "Banked reset credits are displayed, not the applicable subset")
+        try check(banked.resetCredits?.redeemableNow == 0, "Applicable reset credits stay zero before a window is exhausted")
+        let legacy = try await service.parseCodex(json(#"{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":27,"limit_window_seconds":18000,"reset_at":1788780000}},"rate_limit_reset_credits":{"available_count":2}}"#))
+        try check(legacy.resetCredits?.redeemableNow == 2, "A missing applicable count defaults to banked reset credits")
+        let unreadable = try await service.parseCodex(json(#"{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":27,"limit_window_seconds":18000,"reset_at":1788780000}},"rate_limit_reset_credits":{"available_count":2,"applicable_available_count":-3}}"#))
+        try check(unreadable.resetCredits?.redeemableNow == 2, "An unreadable applicable count falls back to banked reset credits")
+        let inflated = try await service.parseCodex(json(#"{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":27,"limit_window_seconds":18000,"reset_at":1788780000}},"rate_limit_reset_credits":{"available_count":2,"applicable_available_count":5}}"#))
+        try check(inflated.resetCredits?.redeemableNow == 2, "An applicable count above banked never overstates redeemable reset credits")
+        let negativeBanked = try await service.parseCodex(json(#"{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":27,"limit_window_seconds":18000,"reset_at":1788780000}},"rate_limit_reset_credits":{"available_count":-1,"applicable_available_count":-2}}"#))
+        try check(negativeBanked.resetCredits?.redeemableNow == 0, "Negative reset-credit counts never enable redemption")
         let claude = try await service.parseClaude(json(#"{"five_hour":{"utilization":15,"resets_at":"2026-10-01T01:00:00Z"},"seven_day":{"utilization":40,"resets_at":null},"seven_day_sonnet":null}"#))
         try check(claude.limits.map(\.usedPercent) == [15, 40], "Claude utilization is already a percentage")
         try check(claude.limits[1].resetAt == nil, "Missing reset must remain unknown")
@@ -515,9 +526,10 @@ private struct RegressionChecks {
             ProviderUsage(id: "compact-\(index)", integration: .codex, name: "Codex", accountLabel: index == 1 ? "An unusually long account name that needs truncation" : "Codex Account \(index + 2)",
                           plan: "Pro", sourceLabel: "UI fixture",
                           limits: [ProviderLimit(cadence: .weekly, label: nil, usedPercent: used, resetAt: Date().addingTimeInterval(414_000))],
-                          resetCredits: ResetCredits(availableCount: 2, applicableAvailableCount: 2))
+                          resetCredits: ResetCredits(availableCount: 2, applicableAvailableCount: 0))
         }
         controller.update(states: [.codex: IntegrationState(providers: compactProviders, updatedAt: Date())], enabled: [.codex], displayMode: .used)
+        try check(descendants(controller.view).contains { $0.toolTip == "2 reset credits available" }, "Reset credit badge shows the banked count, not the applicable subset")
         window.setContentSize(controller.preferredContentSize)
         window.contentView?.layoutSubtreeIfNeeded()
         window.appearance = NSAppearance(named: .darkAqua)

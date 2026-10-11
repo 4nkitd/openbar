@@ -321,7 +321,7 @@ private final class AccountQuotaView: NSStackView {
         summary.setRefreshing(refreshing)
         summary.update(provider.limitingWindow, mode: mode, integration: provider.integration,
                        title: provider.accountLabel ?? provider.integration.name,
-                       credits: provider.resetCredits?.applicableAvailableCount,
+                       credits: provider.resetCredits?.availableCount,
                        attention: refreshing ? nil : attention)
         details.isHidden = !expanded
         if expanded {
@@ -343,7 +343,7 @@ private final class AccountQuotaView: NSStackView {
         } else {
             detailRows.forEach { $0.setRefreshing(false) }
         }
-        resetEligible = canReset && (provider.resetCredits?.applicableAvailableCount ?? 0) > 0 && provider.primary.usedPercent >= 100
+        resetEligible = canReset && (provider.resetCredits?.redeemableNow ?? 0) > 0 && provider.primary.usedPercent >= 100
         resetButton.isHidden = !expanded || provider.resetCredits == nil
         resetButton.isEnabled = resetEligible && !consuming
         if !resetEligible { cancelReset() }
