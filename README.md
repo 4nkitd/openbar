@@ -17,7 +17,7 @@ brew install --cask 4nkitd/tap/openbar
 open -a OpenBar
 ```
 
-Or download [OpenBar v0.1.10](https://github.com/4nkitd/openbar/releases/download/v0.1.10/OpenBar-0.1.10-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
+Or download [OpenBar v0.1.11](https://github.com/4nkitd/openbar/releases/download/v0.1.11/OpenBar-0.1.11-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
 
 This release is ad-hoc signed and is not notarized. If Gatekeeper blocks the app, review the download source and allow it under **System Settings → Privacy & Security → Open Anyway**. Homebrew updates are available through `brew upgrade --cask 4nkitd/tap/openbar`.
 
@@ -61,7 +61,9 @@ GitHub's unofficial quota endpoint does not accept every personal access token. 
 
 ### Antigravity OAuth setup
 
-Google OAuth client secrets are **not embedded in the app or repository**. OpenBar reuses Antigravity credentials from the OpenCode account store and can discover the matching local `agy-auth.js` client configuration. Refreshing an expired token runs locally, even when OpenCode is not running.
+Google OAuth client secrets are **not embedded in the app or repository**. OpenBar reuses Antigravity credentials from the OpenCode account store and discovers the matching local `agy-auth.js` client configuration in `plugins` or `plugins-disabled`. It only reads the file; it does not execute or re-enable the plugin. After a successful refresh, OpenBar saves the working client configuration to Keychain so moving or removing the plugin does not require manual setup. Refreshing an expired token runs locally, even when OpenCode is not running.
+
+This integration uses unofficial Google quota endpoints. Google's [Antigravity terms](https://antigravity.google/terms), section 6, restrict third-party OAuth access and warn of account suspension. OpenBar is not an officially supported Antigravity client.
 
 Choose **Integrations → Antigravity → Configure OAuth…** only when the local OpenCode client configuration is unavailable. Saved values stay in the macOS Keychain. They are not provider account tokens and cannot replace an account's existing sign-in.
 
@@ -115,7 +117,7 @@ The regression checks compile the actual sources with `swiftc` and work with Com
 
 ### Updates and releases
 
-Automatic updates require a build configured with an OpenBar HTTPS feed and public signing key. The current download and unconfigured local builds need a manual or Homebrew upgrade. OpenBar does not use CodexBar Lite's update feed or signing key. The checked-in `appcast.xml` is an empty OpenBar feed until a signed release is created.
+Official releases include the OpenBar HTTPS update feed and public signing key. Unconfigured local builds need a manual or Homebrew upgrade. OpenBar does not use CodexBar Lite's update feed or signing key. The checked-in `appcast.xml` contains signed OpenBar releases and is also published from `docs/appcast.xml`.
 
 `scripts/release.sh <version> <build-number>` creates a platform-specific release ZIP and prints its SHA-256. Build numbers must increase beyond every item in the existing feed. To generate a Sparkle feed:
 

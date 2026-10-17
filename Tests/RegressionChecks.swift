@@ -15,6 +15,21 @@ private func check(_ condition: @autoclosure () -> Bool, _ message: String) thro
 
 private func json(_ value: String) -> Data { Data(value.utf8) }
 
+private func requestBody(_ request: URLRequest) -> Data {
+    if let body = request.httpBody { return body }
+    guard let stream = request.httpBodyStream else { return Data() }
+    stream.open()
+    defer { stream.close() }
+    var body = Data()
+    var buffer = [UInt8](repeating: 0, count: 1024)
+    while true {
+        let count = stream.read(&buffer, maxLength: buffer.count)
+        if count <= 0 { break }
+        body.append(contentsOf: buffer.prefix(count))
+    }
+    return body
+}
+
 private func sample(_ id: IntegrationID, account: String? = nil, used: Double = 27) -> ProviderUsage {
     ProviderUsage(
         id: id.rawValue + (account ?? ""), integration: id, name: id.name,
@@ -93,16 +108,40 @@ private final class XaiRefreshHTTPProtocol: URLProtocol {
 }
 
 private final class AntigravityRefreshHTTPProtocol: URLProtocol {
+    private static let lock = NSLock()
+    private static var refreshes = 0
+    private static var denied = 0
+
+    static func resetCounts() {
+        lock.lock()
+        defer { lock.unlock() }
+        refreshes = 0
+        denied = 0
+    }
+
+    static var counts: (refreshes: Int, denied: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (refreshes, denied)
+    }
+
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let isToken = request.url?.host == "oauth2.googleapis.com" && request.url?.path == "/token"
+        let invalidClient = isToken && String(data: requestBody(request), encoding: .utf8)?.contains("client_id=stale-fixture-id") == true
         let isQuota = request.url?.host?.contains("cloudcode-pa") == true
             && request.url?.host?.hasSuffix("googleapis.com") == true
             && request.value(forHTTPHeaderField: "Authorization") == "Bearer refreshed-google-token"
-        let response = HTTPURLResponse(url: request.url!, statusCode: isToken || isQuota ? 200 : 401, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+        Self.lock.lock()
+        if isToken { Self.refreshes += 1 }
+        if !isToken && !isQuota { Self.denied += 1 }
+        Self.lock.unlock()
+        let response = HTTPURLResponse(url: request.url!, statusCode: !invalidClient && (isToken || isQuota) ? 200 : 401, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
         let body: Data
-        if isToken {
+        if invalidClient {
+            body = json(#"{"error":"invalid_client"}"#)
+        } else if isToken {
             body = json(#"{"access_token":"refreshed-google-token","refresh_token":"rotated-google-refresh","expires_in":10800}"#)
         } else if request.url?.absoluteString.contains("loadCodeAssist") == true {
             body = json(#"{"currentTier":{"name":"Pro"},"cloudaicompanionProject":"fixture-project"}"#)
@@ -267,6 +306,36 @@ private struct RegressionChecks {
         try check(clients.count == 1 && clients[0].0 == "antigravity", "Local OAuth setup validates a complete client pair")
         let pluginClients = CredentialStore.parseGoogleOAuthClients(#"var ANTIGRAVITY_CLIENT_ID = "plugin-id"; var ANTIGRAVITY_CLIENT_SECRET = "plugin-secret";"#)
         try check(pluginClients.count == 1 && pluginClients[0].0 == "antigravity" && pluginClients[0].1.clientID == "plugin-id", "Antigravity plugin OAuth client discovery")
+        try check(CredentialStore.parseGoogleOAuthClients(#"const ANTIGRAVITY_CLIENT_ID = " "; const ANTIGRAVITY_CLIENT_SECRET = "secret";"#).isEmpty, "Ignore empty plugin OAuth client values")
+        let pluginHome = output.appendingPathComponent("plugin-home")
+        let activePlugin = pluginHome.appendingPathComponent(".config/opencode/plugins/agy-auth.js")
+        let disabledPlugin = pluginHome.appendingPathComponent(".config/opencode/plugins-disabled/agy-auth.js")
+        let pluginSource = json(#"export const ANTIGRAVITY_CLIENT_ID = 'plugin-id'; export const ANTIGRAVITY_CLIENT_SECRET = 'plugin-secret';"#)
+        try writePrivateData(pluginSource, to: activePlugin)
+        let pluginURLs = CredentialStore.googleOAuthPluginURLs(homeDirectory: pluginHome)
+        let activeClients = CredentialStore.googleOAuthClients(pluginURLs: pluginURLs, saved: [])
+        try check(activeClients.count == 1 && activeClients[0].1.clientID == "plugin-id", "Discover the active plugin's client configuration")
+        try FileManager.default.createDirectory(at: disabledPlugin.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: activePlugin, to: disabledPlugin)
+        let disabledClients = CredentialStore.googleOAuthClients(pluginURLs: pluginURLs, saved: [])
+        try check(disabledClients.count == 1 && disabledClients[0].1.clientID == "plugin-id" && !FileManager.default.fileExists(atPath: activePlugin.path), "Read a disabled plugin without re-enabling it")
+        let staleClient = GoogleOAuthClient(clientID: "stale-id", clientSecret: "stale-secret")
+        let fallbackClients = CredentialStore.googleOAuthClients(pluginURLs: pluginURLs, saved: [("antigravity", staleClient)])
+        try check(fallbackClients.map { $0.1.clientID } == ["stale-id", "plugin-id"], "Stale saved clients must not hide a discovered replacement")
+        let duplicateClients = CredentialStore.googleOAuthClients(pluginURLs: pluginURLs, saved: disabledClients)
+        try check(duplicateClients.count == 1, "Do not retry duplicate OAuth client pairs")
+        try FileManager.default.removeItem(at: disabledPlugin)
+        let retainedClients = CredentialStore.googleOAuthClients(pluginURLs: pluginURLs, saved: disabledClients)
+        try check(retainedClients.count == 1 && retainedClients[0].1.clientID == "plugin-id", "Retain a saved client after the plugin is removed")
+        let duplicateCandidates = GoogleOAuthClient.refreshCandidates(environment: ["ANTIGRAVITY_OAUTH_CLIENT_ID": "plugin-id", "ANTIGRAVITY_OAUTH_CLIENT_SECRET": "plugin-secret"], local: disabledClients)
+        try check(duplicateCandidates.count == 1 && duplicateCandidates[0].remember, "Matching environment values must not prevent retaining a local client")
+        let duplicateEnvironmentCandidates = GoogleOAuthClient.refreshCandidates(environment: [
+            "ANTIGRAVITY_OAUTH_CLIENT_ID": "plugin-id", "ANTIGRAVITY_OAUTH_CLIENT_SECRET": "plugin-secret",
+            "GEMINI_OAUTH_CLIENT_ID": "plugin-id", "GEMINI_OAUTH_CLIENT_SECRET": "plugin-secret"
+        ], local: disabledClients)
+        try check(duplicateEnvironmentCandidates.count == 1 && duplicateEnvironmentCandidates[0].kind == "antigravity" && duplicateEnvironmentCandidates[0].remember, "Deduplicate identical environment and local client pairs")
+        let fallbackCandidates = GoogleOAuthClient.refreshCandidates(environment: ["ANTIGRAVITY_OAUTH_CLIENT_ID": "stale-id", "ANTIGRAVITY_OAUTH_CLIENT_SECRET": "stale-secret"], local: disabledClients)
+        try check(fallbackCandidates.map { $0.client.clientID } == ["stale-id", "plugin-id"] && fallbackCandidates[1].remember, "A stale environment client retains the local fallback candidate")
         do {
             _ = try GoogleOAuthClient.fromEnvironment(["GEMINI_OAUTH_CLIENT_ID": "fixture-id"])
             throw CheckFailure(description: "Incomplete client pair accepted")
@@ -277,12 +346,46 @@ private struct RegressionChecks {
         let antigravityAccount = IntegrationAccount(id: "antigravity-refresh", integration: .antigravity, label: "Antigravity", source: .file, credentialPath: antigravityPath.path, isEnabled: true)
         let antigravityConfiguration = URLSessionConfiguration.ephemeral
         antigravityConfiguration.protocolClasses = [AntigravityRefreshHTTPProtocol.self]
-        let antigravityService = IntegrationService(configuration: antigravityConfiguration, environment: ["ANTIGRAVITY_OAUTH_CLIENT_ID": "fixture-id", "ANTIGRAVITY_OAUTH_CLIENT_SECRET": "fixture-secret"])
+        AntigravityRefreshHTTPProtocol.resetCounts()
+        var environmentClientSaveCount = 0
+        let antigravityService = IntegrationService(configuration: antigravityConfiguration, environment: ["ANTIGRAVITY_OAUTH_CLIENT_ID": "fixture-id", "ANTIGRAVITY_OAUTH_CLIENT_SECRET": "fixture-secret"], googleOAuthClients: { [] }, saveGoogleOAuthClient: { _, _ in environmentClientSaveCount += 1 })
         let antigravityUsage = try await antigravityService.fetch(antigravityAccount)
         try check(antigravityUsage[0].primary.remainingPercent == 88, "Antigravity refreshes OAuth before quota collection")
+        try check(AntigravityRefreshHTTPProtocol.counts.refreshes == 1 && AntigravityRefreshHTTPProtocol.counts.denied == 0, "Refresh-only sign-ins do not make unauthenticated quota requests")
         let refreshedAntigravity = try JSONSerialization.jsonObject(with: Data(contentsOf: antigravityPath)) as! [String: Any]
         let refreshedAntigravityAccount = (refreshedAntigravity["accounts"] as! [[String: Any]])[0]
         try check(refreshedAntigravityAccount["refreshToken"] as? String == "rotated-google-refresh", "Antigravity persists rotated OAuth credentials")
+        try check(CredentialStore.antigravityAccounts(for: antigravityAccount)[0].expiresAt?.timeIntervalSinceNow ?? 0 > 10_000, "Read persisted camel-case token expiry")
+        AntigravityRefreshHTTPProtocol.resetCounts()
+        let relaunchedAntigravityService = IntegrationService(configuration: antigravityConfiguration, environment: ["ANTIGRAVITY_OAUTH_CLIENT_ID": "fixture-id", "ANTIGRAVITY_OAUTH_CLIENT_SECRET": "fixture-secret"], googleOAuthClients: { [] }, saveGoogleOAuthClient: { _, _ in environmentClientSaveCount += 1 })
+        _ = try await relaunchedAntigravityService.fetch(antigravityAccount)
+        try check(AntigravityRefreshHTTPProtocol.counts.refreshes == 0 && AntigravityRefreshHTTPProtocol.counts.denied == 0, "A new service reuses a valid persisted token")
+        let expiredAntigravityPath = output.appendingPathComponent("antigravity-expired.json")
+        try writePrivateData(json(#"{"accounts":[{"email":"expired@example.test","refreshToken":"expired-google-refresh","accessToken":"expired-google-token","expiresAt":1}]}"#), to: expiredAntigravityPath)
+        let expiredAntigravityAccount = IntegrationAccount(id: "antigravity-expired", integration: .antigravity, label: "Expired", source: .file, credentialPath: expiredAntigravityPath.path, isEnabled: true)
+        AntigravityRefreshHTTPProtocol.resetCounts()
+        _ = try await antigravityService.fetch(expiredAntigravityAccount)
+        try check(AntigravityRefreshHTTPProtocol.counts.refreshes == 1 && AntigravityRefreshHTTPProtocol.counts.denied == 0, "Refresh known-expired tokens before requesting quota")
+        let rejectedAntigravityPath = output.appendingPathComponent("antigravity-rejected.json")
+        try writePrivateData(json(#"{"accounts":[{"email":"rejected@example.test","refreshToken":"rejected-google-refresh","accessToken":"rejected-google-token"}]}"#), to: rejectedAntigravityPath)
+        let rejectedAntigravityAccount = IntegrationAccount(id: "antigravity-rejected", integration: .antigravity, label: "Rejected", source: .file, credentialPath: rejectedAntigravityPath.path, isEnabled: true)
+        AntigravityRefreshHTTPProtocol.resetCounts()
+        _ = try await antigravityService.fetch(rejectedAntigravityAccount)
+        try check(AntigravityRefreshHTTPProtocol.counts.refreshes == 1 && AntigravityRefreshHTTPProtocol.counts.denied == 1, "Unknown-expiry tokens refresh once after an auth failure")
+        try check(environmentClientSaveCount == 0, "Environment-only OAuth clients must never be persisted")
+        let clientFallbackPath = output.appendingPathComponent("antigravity-client-fallback.json")
+        try writePrivateData(json(#"{"accounts":[{"refreshToken":"client-fallback-refresh"}]}"#), to: clientFallbackPath)
+        let clientFallbackAccount = IntegrationAccount(id: "antigravity-client-fallback", integration: .antigravity, label: "Client fallback", source: .file, credentialPath: clientFallbackPath.path, isEnabled: true)
+        var rememberedClients: [(String, GoogleOAuthClient)] = []
+        let clientFallbackService = IntegrationService(configuration: antigravityConfiguration, environment: [
+            "ANTIGRAVITY_OAUTH_CLIENT_ID": "stale-fixture-id", "ANTIGRAVITY_OAUTH_CLIENT_SECRET": "stale-fixture-secret",
+            "GEMINI_OAUTH_CLIENT_ID": "fixture-id", "GEMINI_OAUTH_CLIENT_SECRET": "fixture-secret"
+        ], googleOAuthClients: { [("antigravity", GoogleOAuthClient(clientID: "fixture-id", clientSecret: "fixture-secret"))] }, saveGoogleOAuthClient: { client, kind in rememberedClients.append((kind, client)) })
+        AntigravityRefreshHTTPProtocol.resetCounts()
+        let clientFallbackUsage = try await clientFallbackService.fetch(clientFallbackAccount)
+        try check(clientFallbackUsage[0].primary.remainingPercent == 88 && AntigravityRefreshHTTPProtocol.counts.refreshes == 2, "HTTP 401 invalid_client must try the next configured OAuth client")
+        try check(rememberedClients.count == 1 && rememberedClients[0].0 == "antigravity" && rememberedClients[0].1.clientID == "fixture-id", "Remember the working local OAuth client without accessing Keychain")
+        print("PASS Antigravity plugin relocation, saved-client fallback, expiry, refresh and relaunch")
 
         let probe = FetchProbe()
         let codexAccount = IntegrationAccount.current(.codex)
@@ -425,9 +528,17 @@ private struct RegressionChecks {
         try check(migratedEntries.count == 1 && FileManager.default.fileExists(atPath: oldCache.path) && FileManager.default.fileExists(atPath: newCache.path), "Cache migration copies readings without deleting legacy data")
         print("PASS multi-account HTTP credential routing, failure isolation, removal and rebrand migration")
 
-        var remainder = ""
-        let frames = OpenCodeSSE.frames(from: "data: {\"type\":\"session.reasoning.delta\",\"data\":{\"sessionID\":\"ses_abc\"}}\n\n: heartbeat\n\ndata: {\"type\":\"server.connected\",\"data\":{}}\n\npartial", remainder: &remainder)
-        try check(frames.count == 2 && remainder == "partial", "SSE splits complete frames and keeps a partial remainder")
+        var remainder = Data()
+        let frames = OpenCodeSSE.frames(from: Data("data: {\"type\":\"session.reasoning.delta\",\"data\":{\"sessionID\":\"ses_abc\"}}\n\n: heartbeat\n\ndata: {\"type\":\"server.connected\",\"data\":{}}\n\npartial".utf8), remainder: &remainder)
+        try check(frames.count == 2 && remainder == Data("partial".utf8), "SSE splits complete frames and keeps a partial remainder")
+        let unicodePayload = #"{"type":"session.text.delta","data":{"sessionID":"ses_unicode","text":"Hello 🌍 café"}}"#
+        let unicodeStream = Data("data: \(unicodePayload)\n\n".utf8)
+        for split in 0...unicodeStream.count {
+            var buffered = Data()
+            var decoded = OpenCodeSSE.frames(from: Data(unicodeStream.prefix(split)), remainder: &buffered)
+            decoded += OpenCodeSSE.frames(from: Data(unicodeStream.dropFirst(split)), remainder: &buffered)
+            try check(decoded == [Data(unicodePayload.utf8)] && buffered.isEmpty, "SSE preserves UTF-8 at every network chunk boundary")
+        }
         let first = try JSONSerialization.jsonObject(with: frames[0]) as! [String: Any]
         let second = try JSONSerialization.jsonObject(with: frames[1]) as! [String: Any]
         try check(OpenCodeEvent.activitySessionID(in: first) == "ses_abc", "Reasoning deltas count as consumption")

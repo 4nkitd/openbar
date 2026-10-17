@@ -2,12 +2,13 @@ import AppKit
 import Darwin
 
 enum OpenCodeSSE {
-    static func frames(from chunk: String, remainder: inout String) -> [Data] {
-        remainder += chunk
+    static func frames(from chunk: Data, remainder: inout Data) -> [Data] {
+        remainder.append(chunk)
         var frames: [Data] = []
-        while let range = remainder.range(of: "\n\n") {
-            let block = String(remainder[..<range.lowerBound])
+        while let range = remainder.range(of: Data("\n\n".utf8)) {
+            let blockData = remainder[..<range.lowerBound]
             remainder.removeSubrange(..<range.upperBound)
+            guard let block = String(data: blockData, encoding: .utf8) else { continue }
             var payload = ""
             for line in block.split(separator: "\n", omittingEmptySubsequences: false) {
                 guard line.hasPrefix("data:") else { continue }
@@ -86,7 +87,7 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
     private var session: URLSession?
     private var task: URLSessionDataTask?
     private var endpoint: OpenCodeServiceEndpoint?
-    private var remainder = ""
+    private var remainder = Data()
     private var lastBeat: [IntegrationID: Date] = [:]
     private var providers: [String: IntegrationID] = [:]
     private var resolutions: [String: URLSessionDataTask] = [:]
@@ -158,7 +159,7 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
         resolutions.removeAll()
         providers.removeAll()
         unsupportedUntil.removeAll()
-        remainder = ""
+        remainder = Data()
         lastBeat = [:]
         publish()
     }
@@ -211,7 +212,7 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
         reconnect = nil
         task?.cancel()
         task = nil
-        remainder = ""
+        remainder = Data()
         guard let endpoint else { return }
         var request = URLRequest(url: endpoint.eventURL)
         request.setValue(endpoint.authorization, forHTTPHeaderField: "Authorization")
@@ -228,11 +229,10 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
     }
 
     nonisolated func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        guard let text = String(data: data, encoding: .utf8) else { return }
         Task { @MainActor in
             guard dataTask === self.task else { return }
             self.backoff = 1
-            for frame in OpenCodeSSE.frames(from: text, remainder: &self.remainder) {
+            for frame in OpenCodeSSE.frames(from: data, remainder: &self.remainder) {
                 self.handle(frame)
             }
         }

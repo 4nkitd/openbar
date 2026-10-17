@@ -332,7 +332,7 @@ enum CredentialStore {
                 label: item["email"] as? String ?? "Account \(fingerprint(refresh.isEmpty ? access! : refresh).prefix(6))",
                 refreshToken: refresh,
                 accessToken: access,
-                expiresAt: dateValue(token["expiry"] ?? token["expires_at"] ?? token["expires"]),
+                expiresAt: dateValue(token["expiry"] ?? token["expiresAt"] ?? token["expires_at"] ?? token["expires"]),
                 location: location,
                 sourceRefreshToken: refresh
             )
@@ -410,24 +410,25 @@ enum CredentialStore {
         return update(&object)
     }
 
-    static func googleOAuthClients() -> [GoogleOAuthClient] {
+    static func googleOAuthClients() -> [(String, GoogleOAuthClient)] {
         var clients: [(String, GoogleOAuthClient)] = []
-        var seen = Set<String>()
         for kind in ["antigravity", "gemini"] {
             guard let value = readKeychain(service: googleOAuthService, account: "client.\(kind)"),
                   let data = value.data(using: .utf8),
                   let client = try? JSONDecoder().decode(GoogleOAuthClient.self, from: data) else { continue }
             clients.append((kind, client))
-            seen.insert(kind)
         }
-        for url in googleOAuthPluginURLs() {
+        return googleOAuthClients(pluginURLs: googleOAuthPluginURLs(), saved: clients)
+    }
+
+    static func googleOAuthClients(pluginURLs: [URL], saved: [(String, GoogleOAuthClient)]) -> [(String, GoogleOAuthClient)] {
+        var clients = saved
+        for url in pluginURLs {
             guard let source = try? String(contentsOf: url, encoding: .utf8) else { continue }
-            for (kind, client) in parseGoogleOAuthClients(source) where !seen.contains(kind) {
-                clients.append((kind, client))
-                seen.insert(kind)
-            }
+            clients += parseGoogleOAuthClients(source)
         }
-        return clients.map { $0.1 }
+        var seen = Set<GoogleOAuthClient>()
+        return clients.filter { !$0.1.clientID.isEmpty && !$0.1.clientSecret.isEmpty && seen.insert($0.1).inserted }
     }
 
     static func parseGoogleOAuthClients(_ source: String) -> [(String, GoogleOAuthClient)] {
@@ -447,15 +448,14 @@ enum CredentialStore {
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)),
               let range = Range(match.range(at: 1), in: source) else { return nil }
-        return String(source[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return nonEmptyString(String(source[range]))
     }
 
-    private static func googleOAuthPluginURLs() -> [URL] {
-        [
-            home(".config/opencode/plugins/agy-auth.js"),
-            home(".local/share/opencode/plugins/agy-auth.js"),
-            home("Library/Application Support/opencode/plugins/agy-auth.js")
-        ]
+    static func googleOAuthPluginURLs(homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser) -> [URL] {
+        let roots = [".config/opencode", ".local/share/opencode", "Library/Application Support/opencode"]
+        return ["plugins", "plugins-disabled"].flatMap { directory in
+            roots.map { homeDirectory.appendingPathComponent("\($0)/\(directory)/agy-auth.js") }
+        }
     }
 
     static func saveGoogleOAuthClient(_ client: GoogleOAuthClient, kind: String) throws {
@@ -463,6 +463,9 @@ enum CredentialStore {
             throw IntegrationError.notConfigured("Both OAuth client ID and client secret are required.")
         }
         let raw = String(decoding: try JSONEncoder().encode(client), as: UTF8.self)
+        if let saved = readKeychain(service: googleOAuthService, account: "client.\(kind)"),
+           let data = saved.data(using: .utf8),
+           (try? JSONDecoder().decode(GoogleOAuthClient.self, from: data)) == client { return }
         try writeKeychain(raw, service: googleOAuthService, account: "client.\(kind)")
     }
 
@@ -922,9 +925,30 @@ enum XaiCredentialLocation {
     case unavailable
 }
 
-struct GoogleOAuthClient: Codable {
+struct GoogleOAuthClient: Codable, Hashable {
     let clientID: String
     let clientSecret: String
+
+    static func refreshCandidates(environment: [String: String], local: [(String, GoogleOAuthClient)]) -> [(kind: String, client: GoogleOAuthClient, remember: Bool)] {
+        let configured = ["antigravity", "gemini"].compactMap { kind -> (kind: String, client: GoogleOAuthClient, remember: Bool)? in
+            let prefix = kind.uppercased()
+            guard let id = nonEmptyString(environment["\(prefix)_OAUTH_CLIENT_ID"]),
+                  let secret = nonEmptyString(environment["\(prefix)_OAUTH_CLIENT_SECRET"]) else { return nil }
+            return (kind, GoogleOAuthClient(clientID: id, clientSecret: secret), false)
+        }
+        var clients: [(kind: String, client: GoogleOAuthClient, remember: Bool)] = []
+        for candidate in configured + local.map({ (kind: $0.0, client: $0.1, remember: true) }) {
+            if let index = clients.firstIndex(where: { $0.client == candidate.client }) {
+                if candidate.remember {
+                    clients[index].kind = candidate.kind
+                    clients[index].remember = true
+                }
+            } else {
+                clients.append(candidate)
+            }
+        }
+        return clients
+    }
 
     static func fromEnvironment(_ environment: [String: String]) throws -> [(String, GoogleOAuthClient)] {
         var clients: [(String, GoogleOAuthClient)] = []
@@ -952,17 +976,23 @@ actor IntegrationService {
     private static let xaiClientID = "b1a00492-073a-47ea-816f-4c329264a828"
     private let session: URLSession
     private let environment: [String: String]
+    private let googleOAuthClients: () -> [(String, GoogleOAuthClient)]
+    private let saveGoogleOAuthClient: (GoogleOAuthClient, String) throws -> Void
     private var googleTokenCache: [String: (token: String, expiresAt: Date)] = [:]
     private var googleRefreshTasks: [String: Task<GoogleCredentials, Error>] = [:]
     private var xaiRefreshTasks: [String: Task<XaiCredentials, Error>] = [:]
 
-    init(configuration: URLSessionConfiguration = .ephemeral, environment: [String: String] = ProcessInfo.processInfo.environment) {
+    init(configuration: URLSessionConfiguration = .ephemeral, environment: [String: String] = ProcessInfo.processInfo.environment,
+         googleOAuthClients: @escaping () -> [(String, GoogleOAuthClient)] = { CredentialStore.googleOAuthClients() },
+         saveGoogleOAuthClient: @escaping (GoogleOAuthClient, String) throws -> Void = { try CredentialStore.saveGoogleOAuthClient($0, kind: $1) }) {
         configuration.httpShouldSetCookies = false
         configuration.timeoutIntervalForRequest = 20
         configuration.timeoutIntervalForResource = 30
         configuration.urlCache = nil
         session = URLSession(configuration: configuration, delegate: NoCredentialRedirects(), delegateQueue: nil)
         self.environment = environment
+        self.googleOAuthClients = googleOAuthClients
+        self.saveGoogleOAuthClient = saveGoogleOAuthClient
     }
 
     func fetch(_ account: IntegrationAccount) async throws -> [ProviderUsage] {
@@ -1452,7 +1482,8 @@ actor IntegrationService {
 
     private func googleAccessToken(for account: GoogleCredentials, forceRefresh: Bool = false) async throws -> String {
         if !forceRefresh, let cached = googleTokenCache[account.refreshToken], cached.expiresAt.timeIntervalSinceNow > 60 { return cached.token }
-        if !forceRefresh, let token = account.accessToken, !token.isEmpty { return token }
+        if !forceRefresh, let token = account.accessToken, !token.isEmpty,
+           account.expiresAt.map({ $0.timeIntervalSinceNow > 60 }) ?? true { return token }
         let refreshed = try await refreshGoogleCredentials(account)
         googleTokenCache[account.refreshToken] = (refreshed.accessToken ?? "", refreshed.expiresAt ?? Date().addingTimeInterval(3600))
         googleTokenCache[refreshed.refreshToken] = (refreshed.accessToken ?? "", refreshed.expiresAt ?? Date().addingTimeInterval(3600))
@@ -1463,12 +1494,7 @@ actor IntegrationService {
         guard !account.refreshToken.isEmpty else { throw IntegrationError.notConfigured("Antigravity OAuth credentials expired. Sign in again.") }
         let key = fingerprint(account.refreshToken)
         if let task = googleRefreshTasks[key] { return try await task.value }
-        var clients = CredentialStore.googleOAuthClients().map { ($0.clientID, $0.clientSecret) }
-        clients += ["ANTIGRAVITY", "GEMINI"].compactMap { prefix in
-            guard let id = environment["\(prefix)_OAUTH_CLIENT_ID"], !id.isEmpty,
-                  let secret = environment["\(prefix)_OAUTH_CLIENT_SECRET"], !secret.isEmpty else { return nil }
-            return (id, secret)
-        }
+        let clients = GoogleOAuthClient.refreshCandidates(environment: environment, local: googleOAuthClients())
         if ProcessInfo.processInfo.arguments.contains("--diagnostics") {
             FileHandle.standardError.write(Data("Google OAuth: \(clients.count) local client configuration(s) available.\n".utf8))
         }
@@ -1476,23 +1502,36 @@ actor IntegrationService {
             throw IntegrationError.notConfigured("OAuth setup required. Open Integrations → Antigravity → Configure OAuth.")
         }
         let session = self.session
-        let task = Task { [session, clients] in
-            for (clientID, clientSecret) in clients {
+        let saveClient = saveGoogleOAuthClient
+        let task = Task { [session, clients, saveClient] in
+            for (kind, client, remember) in clients {
                 try Task.checkCancellation()
                 var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
                 request.httpMethod = "POST"
                 request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
                 request.httpBody = Self.formData([
-                    "client_id": clientID,
-                    "client_secret": clientSecret,
+                    "client_id": client.clientID,
+                    "client_secret": client.clientSecret,
                     "grant_type": "refresh_token",
                     "refresh_token": account.refreshToken
                 ])
                 let (data, response) = try await session.data(for: request)
-                if (response as? HTTPURLResponse)?.statusCode == 400 { continue }
+                let status = (response as? HTTPURLResponse)?.statusCode
+                if status == 400 { continue }
+                if status == 401,
+                   let error = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   error["error"] as? String == "invalid_client" { continue }
                 try validate(response, data: data, provider: "Google OAuth")
                 guard let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let token = nonEmptyString(value["access_token"]) else { continue }
+                if remember {
+                    do { try saveClient(client, kind) }
+                    catch {
+                        if ProcessInfo.processInfo.arguments.contains("--diagnostics") {
+                            FileHandle.standardError.write(Data("Google OAuth: working client configuration could not be saved to Keychain.\n".utf8))
+                        }
+                    }
+                }
                 let expiresAt = Date().addingTimeInterval(number(value["expires_in"])?.doubleValue ?? 3600)
                 return GoogleCredentials(
                     label: account.label,
@@ -1503,7 +1542,7 @@ actor IntegrationService {
                     sourceRefreshToken: account.sourceRefreshToken ?? account.refreshToken
                 )
             }
-            throw IntegrationError.invalidResponse("Could not refresh Antigravity credentials.")
+            throw IntegrationError.notConfigured("Google could not refresh this Antigravity sign-in. Sign in again through Antigravity or your OpenCode plugin.")
         }
         googleRefreshTasks[key] = task
         do {
