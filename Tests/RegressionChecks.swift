@@ -160,6 +160,13 @@ private final class ActivityHTTPProtocol: URLProtocol {
     private static var streams: [ActivityHTTPProtocol] = []
     private static var requests: [String: Int] = [:]
     private static var providers: [String: String] = [:]
+    private static var statuses: [String: Int] = [:]
+
+    static func setStatus(_ status: Int, for sessionID: String) {
+        lock.lock()
+        statuses["/api/session/\(sessionID)"] = status
+        lock.unlock()
+    }
 
     static func setProvider(_ provider: String, for sessionID: String) {
         lock.lock()
@@ -183,7 +190,7 @@ private final class ActivityHTTPProtocol: URLProtocol {
         lock.lock()
         let current = streams
         lock.unlock()
-        let data = json("data: {\"type\":\"session.text.delta\",\"data\":{\"sessionID\":\"\(sessionID)\"}}\n\n")
+        let data = json("data: {\"type\":\"session.text.delta\",\"data\":{\"sessionID\":\"\(sessionID)\"}}\r\n\r\n")
         for stream in current { stream.client?.urlProtocol(stream, didLoad: data) }
     }
 
@@ -194,8 +201,9 @@ private final class ActivityHTTPProtocol: URLProtocol {
         Self.lock.lock()
         Self.requests[path, default: 0] += 1
         let provider = Self.providers[path] ?? (path.hasSuffix("unsupported") ? "google" : "xai")
+        let status = Self.statuses[path] ?? 200
         Self.lock.unlock()
-        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": path == "/api/event" ? "text/event-stream" : "application/json"])!
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": path == "/api/event" ? "text/event-stream" : "application/json"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         if path == "/api/event" {
             Self.lock.lock()
@@ -528,17 +536,30 @@ private struct RegressionChecks {
         try check(migratedEntries.count == 1 && FileManager.default.fileExists(atPath: oldCache.path) && FileManager.default.fileExists(atPath: newCache.path), "Cache migration copies readings without deleting legacy data")
         print("PASS multi-account HTTP credential routing, failure isolation, removal and rebrand migration")
 
-        var remainder = Data()
-        let frames = OpenCodeSSE.frames(from: Data("data: {\"type\":\"session.reasoning.delta\",\"data\":{\"sessionID\":\"ses_abc\"}}\n\n: heartbeat\n\ndata: {\"type\":\"server.connected\",\"data\":{}}\n\npartial".utf8), remainder: &remainder)
-        try check(frames.count == 2 && remainder == Data("partial".utf8), "SSE splits complete frames and keeps a partial remainder")
-        let unicodePayload = #"{"type":"session.text.delta","data":{"sessionID":"ses_unicode","text":"Hello 🌍 café"}}"#
-        let unicodeStream = Data("data: \(unicodePayload)\n\n".utf8)
-        for split in 0...unicodeStream.count {
-            var buffered = Data()
-            var decoded = OpenCodeSSE.frames(from: Data(unicodeStream.prefix(split)), remainder: &buffered)
-            decoded += OpenCodeSSE.frames(from: Data(unicodeStream.dropFirst(split)), remainder: &buffered)
-            try check(decoded == [Data(unicodePayload.utf8)] && buffered.isEmpty, "SSE preserves UTF-8 at every network chunk boundary")
+        var stream = OpenCodeSSE()
+        let frames = stream.frames(from: Data("data: {\"type\":\"session.reasoning.delta\",\"data\":{\"sessionID\":\"ses_abc\"}}\n\n: heartbeat\n\ndata: {\"type\":\"server.connected\",\"data\":{}}\n\ndata: partial".utf8))
+        try check(frames.count == 2 && stream.frames(from: Data(" event\n\n".utf8)) == [Data("partial event".utf8)], "SSE splits complete frames and keeps a partial remainder")
+        for newline in ["\r\n", "\r"] {
+            var parser = OpenCodeSSE()
+            let decoded = parser.frames(from: Data("data: first\(newline)data: second\(newline)\(newline)".utf8))
+            try check(decoded == [Data("first\nsecond".utf8)], "SSE accepts CRLF and CR line endings")
         }
+        let unicodePayload = #"{"type":"session.text.delta","data":{"sessionID":"ses_unicode","text":"Hello 🌍 café"}}"#
+        for newline in ["\n", "\r\n", "\r"] {
+            let unicodeStream = Data("\u{FEFF}data: \(unicodePayload)\(newline)\(newline): heartbeat\(newline)\(newline)data\(newline)data: tail\(newline)\(newline)".utf8)
+            let expected = [Data(unicodePayload.utf8), Data("\ntail".utf8)]
+            for split in 0...unicodeStream.count {
+                var parser = OpenCodeSSE()
+                var decoded = parser.frames(from: Data(unicodeStream.prefix(split)))
+                decoded += parser.frames(from: Data(unicodeStream.dropFirst(split)))
+                try check(decoded == expected, "SSE preserves UTF-8, BOM and line endings at every network chunk boundary")
+            }
+            var parser = OpenCodeSSE()
+            let decoded = unicodeStream.flatMap { parser.frames(from: Data([$0])) }
+            try check(decoded == expected, "SSE supports one-byte network chunks")
+        }
+        var emptyStream = OpenCodeSSE()
+        try check(emptyStream.frames(from: Data("data\n\ndata:\n\ndata\ndata\n\ndata: unfinished\n".utf8)) == [Data(), Data(), Data("\n".utf8)], "SSE distinguishes empty events from incomplete events")
         let first = try JSONSerialization.jsonObject(with: frames[0]) as! [String: Any]
         let second = try JSONSerialization.jsonObject(with: frames[1]) as! [String: Any]
         try check(OpenCodeEvent.activitySessionID(in: first) == "ses_abc", "Reasoning deltas count as consumption")
@@ -562,6 +583,18 @@ private struct RegressionChecks {
         ActivityHTTPProtocol.emit("ses_active")
         try await wait("Activity event did not request metadata") { ActivityHTTPProtocol.count("/api/session/ses_active") == 1 }
         try await wait("Activity provider was not resolved") { monitor.active == [.xai] }
+        for _ in 0..<20 { ActivityHTTPProtocol.emit("ses_active") }
+        try await Task.sleep(nanoseconds: 30_000_000)
+        try check(ActivityHTTPProtocol.count("/api/session/ses_active") == 1, "Successful metadata stays cached during a token burst")
+        ActivityHTTPProtocol.setStatus(503, for: "ses_unavailable")
+        ActivityHTTPProtocol.emit("ses_unavailable")
+        try await wait("Failed metadata lookup was not attempted") { ActivityHTTPProtocol.count("/api/session/ses_unavailable") == 1 }
+        for _ in 0..<20 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            ActivityHTTPProtocol.emit("ses_unavailable")
+        }
+        try await Task.sleep(nanoseconds: 30_000_000)
+        try check(ActivityHTTPProtocol.count("/api/session/ses_unavailable") == 1, "Failed metadata lookups must not retry for every streamed token")
         ActivityHTTPProtocol.emit("ses_unsupported")
         try await wait("Unsupported activity provider was not requested") { ActivityHTTPProtocol.count("/api/session/ses_unsupported") == 1 }
         try await Task.sleep(nanoseconds: 30_000_000)
@@ -571,21 +604,36 @@ private struct RegressionChecks {
         ActivityHTTPProtocol.setProvider("xai", for: "ses_unsupported")
         try await Task.sleep(nanoseconds: UInt64((OpenCodeActivityMonitor.grace + 0.1) * 1_000_000_000))
         try await wait("Inactive provider did not expire") { monitor.active.isEmpty }
+        ActivityHTTPProtocol.setProvider("openai", for: "ses_active")
+        ActivityHTTPProtocol.emit("ses_active")
+        try await wait("Supported session provider switch was not detected") { ActivityHTTPProtocol.count("/api/session/ses_active") == 2 && monitor.active == [.codex] }
+        ActivityHTTPProtocol.setStatus(200, for: "ses_unavailable")
+        ActivityHTTPProtocol.setProvider("anthropic", for: "ses_unavailable")
+        ActivityHTTPProtocol.emit("ses_unavailable")
+        try await wait("Failed metadata lookup did not recover after cooldown") { ActivityHTTPProtocol.count("/api/session/ses_unavailable") == 2 && monitor.active == [.codex, .claude] }
         ActivityHTTPProtocol.emit("ses_unsupported")
-        try await wait("Unsupported session was not reconsidered after a provider switch") { ActivityHTTPProtocol.count("/api/session/ses_unsupported") == 2 && monitor.active == [.xai] }
+        try await wait("Unsupported session was not reconsidered after a provider switch") { ActivityHTTPProtocol.count("/api/session/ses_unsupported") == 2 && monitor.active == [.codex, .claude, .xai] }
+        ActivityHTTPProtocol.setProvider("google", for: "ses_active")
+        try await Task.sleep(nanoseconds: UInt64((OpenCodeActivityMonitor.grace + 0.1) * 1_000_000_000))
+        try await wait("Old activity did not expire before unsupported switch") { monitor.active.isEmpty }
+        ActivityHTTPProtocol.emit("ses_active")
+        try await wait("Supported-to-unsupported switch did not refresh metadata") { ActivityHTTPProtocol.count("/api/session/ses_active") == 3 }
+        try await Task.sleep(nanoseconds: 30_000_000)
+        try check(monitor.active.isEmpty, "Switching to an unsupported provider must not revive the old activity indicator")
         monitor.stop()
         try await wait("Activity stream was not canceled") { ActivityHTTPProtocol.streamCount == 0 }
         try check(monitor.active.isEmpty, "Stopping activity monitoring clears active providers")
         NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
         try await Task.sleep(nanoseconds: 30_000_000)
         try check(ActivityHTTPProtocol.count("/api/event") == 1, "Wake must not restart a stopped activity monitor")
+        ActivityHTTPProtocol.setProvider("openai", for: "ses_active")
         monitor.start()
         try await wait("Activity stream did not restart") { ActivityHTTPProtocol.count("/api/event") == 2 }
         try await wait("Restarted activity stream response was not sent") { ActivityHTTPProtocol.streamCount == 1 }
         ActivityHTTPProtocol.emit("ses_active")
-        try await wait("Activity provider was not resolved after restart") { monitor.active == [.xai] }
+        try await wait("Activity provider was not resolved after restart") { monitor.active == [.codex] }
         monitor.stop()
-        print("PASS OpenCode activity parsing, HTTP resolution, stop/wake/restart and unsupported-provider caching")
+        print("PASS OpenCode activity parsing, provider switches, stop/wake/restart; 21-event metadata failure burst uses 1 request")
 
         let app = NSApplication.shared
         let appDelegate = CheckAppDelegate()

@@ -1,24 +1,48 @@
 import AppKit
 import Darwin
 
-enum OpenCodeSSE {
-    static func frames(from chunk: Data, remainder: inout Data) -> [Data] {
-        remainder.append(chunk)
+struct OpenCodeSSE {
+    private var line = Data()
+    private var payload = ""
+    private var skipLF = false
+    private var firstLine = true
+
+    mutating func frames(from chunk: Data) -> [Data] {
         var frames: [Data] = []
-        while let range = remainder.range(of: Data("\n\n".utf8)) {
-            let blockData = remainder[..<range.lowerBound]
-            remainder.removeSubrange(..<range.upperBound)
-            guard let block = String(data: blockData, encoding: .utf8) else { continue }
-            var payload = ""
-            for line in block.split(separator: "\n", omittingEmptySubsequences: false) {
-                guard line.hasPrefix("data:") else { continue }
-                let value = line.dropFirst(5)
-                if !payload.isEmpty { payload += "\n" }
-                payload += value.first == " " ? String(value.dropFirst()) : String(value)
+        for byte in chunk {
+            if skipLF {
+                skipLF = false
+                if byte == 10 { continue }
             }
-            if let data = payload.data(using: .utf8), !payload.isEmpty { frames.append(data) }
+            if byte == 10 || byte == 13 {
+                if let frame = consumeLine() { frames.append(frame) }
+                skipLF = byte == 13
+            } else {
+                line.append(byte)
+            }
         }
         return frames
+    }
+
+    private mutating func consumeLine() -> Data? {
+        var text = String(decoding: line, as: UTF8.self)
+        line.removeAll(keepingCapacity: true)
+        if firstLine {
+            firstLine = false
+            if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
+        }
+        if text.isEmpty {
+            guard !payload.isEmpty else { return nil }
+            payload.removeLast()
+            let frame = Data(payload.utf8)
+            payload = ""
+            return frame
+        }
+        guard text == "data" || text.hasPrefix("data:") else { return nil }
+        let value = text == "data" ? "" : String(text.dropFirst(5))
+        payload += value.first == " " ? String(value.dropFirst()) : value
+        payload += "\n"
+        return nil
     }
 }
 
@@ -87,11 +111,11 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
     private var session: URLSession?
     private var task: URLSessionDataTask?
     private var endpoint: OpenCodeServiceEndpoint?
-    private var remainder = Data()
+    private var stream = OpenCodeSSE()
     private var lastBeat: [IntegrationID: Date] = [:]
-    private var providers: [String: IntegrationID] = [:]
+    private var providers: [String: (integration: IntegrationID, expiresAt: Date)] = [:]
     private var resolutions: [String: URLSessionDataTask] = [:]
-    private var unsupportedUntil: [String: Date] = [:]
+    private var retryAfter: [String: Date] = [:]
     private var generation = UUID()
     private var poll: Timer?
     private var expiry: Timer?
@@ -158,8 +182,8 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
         for resolution in resolutions.values { resolution.cancel() }
         resolutions.removeAll()
         providers.removeAll()
-        unsupportedUntil.removeAll()
-        remainder = Data()
+        retryAfter.removeAll()
+        stream = OpenCodeSSE()
         lastBeat = [:]
         publish()
     }
@@ -212,7 +236,7 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
         reconnect = nil
         task?.cancel()
         task = nil
-        remainder = Data()
+        stream = OpenCodeSSE()
         guard let endpoint else { return }
         var request = URLRequest(url: endpoint.eventURL)
         request.setValue(endpoint.authorization, forHTTPHeaderField: "Authorization")
@@ -232,7 +256,7 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
         Task { @MainActor in
             guard dataTask === self.task else { return }
             self.backoff = 1
-            for frame in OpenCodeSSE.frames(from: data, remainder: &self.remainder) {
+            for frame in self.stream.frames(from: data) {
                 self.handle(frame)
             }
         }
@@ -249,15 +273,16 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
     private func handle(_ data: Data) {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let sessionID = OpenCodeEvent.activitySessionID(in: object) else { return }
-        if let integration = providers[sessionID] {
-            beat(integration)
+        if let cached = providers[sessionID], cached.expiresAt > Date() {
+            beat(cached.integration)
             return
         }
+        providers[sessionID] = nil
         resolve(sessionID)
     }
 
     private func resolve(_ sessionID: String) {
-        guard resolutions[sessionID] == nil, (unsupportedUntil[sessionID] ?? .distantPast) <= Date(), let endpoint, let session else { return }
+        guard resolutions[sessionID] == nil, (retryAfter[sessionID] ?? .distantPast) <= Date(), let endpoint, let session else { return }
         let generation = generation
         var request = URLRequest(url: endpoint.sessionURL(sessionID))
         request.timeoutInterval = 10
@@ -266,14 +291,15 @@ final class OpenCodeActivityMonitor: NSObject, URLSessionDataDelegate {
             Task { @MainActor in
                 guard let self, self.generation == generation else { return }
                 self.resolutions[sessionID] = nil
+                self.retryAfter[sessionID] = Date().addingTimeInterval(Self.grace)
                 guard (response as? HTTPURLResponse)?.statusCode == 200, let data,
                        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let provider = OpenCodeEvent.providerID(fromSession: object) else { return }
                 guard let integration = IntegrationID.matchingOpenCodeProvider(provider) else {
-                    self.unsupportedUntil[sessionID] = Date().addingTimeInterval(Self.grace)
                     return
                 }
-                self.providers[sessionID] = integration
+                self.retryAfter[sessionID] = nil
+                self.providers[sessionID] = (integration, Date().addingTimeInterval(Self.grace))
                 self.beat(integration)
             }
         }

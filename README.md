@@ -17,7 +17,7 @@ brew install --cask 4nkitd/tap/openbar
 open -a OpenBar
 ```
 
-Or download [OpenBar v0.1.11](https://github.com/4nkitd/openbar/releases/download/v0.1.11/OpenBar-0.1.11-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
+Or download [OpenBar v0.1.12](https://github.com/4nkitd/openbar/releases/download/v0.1.12/OpenBar-0.1.12-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
 
 This release is ad-hoc signed and is not notarized. If Gatekeeper blocks the app, review the download source and allow it under **System Settings → Privacy & Security → Open Anyway**. Homebrew updates are available through `brew upgrade --cask 4nkitd/tap/openbar`.
 
@@ -87,6 +87,8 @@ Background Keychain reads do not show authorization dialogs or wait for permissi
 Manual refreshes observe a minimum interval of one minute per account, or five minutes for Claude. Failures back off up to 30 minutes, and a longer server `Retry-After` is respected. Opening the popover or changing display preferences does not trigger provider quota requests.
 
 OpenCode activity streaming and service discovery run only while the popover is open. Closing it cancels activity requests and stops animation timers, including refresh shimmers. Quota polling and notifications continue at the configured interval. Activity indicators resume when new OpenCode events arrive after reopening.
+
+During activity, OpenBar rechecks a session's provider after its five-second metadata cache expires, so switching models does not require reopening the popover. Failed or unsupported metadata lookups wait five seconds before retrying on another event. No extra polling timer runs for these checks.
 
 ## Build and run
 
