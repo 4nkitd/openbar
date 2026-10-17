@@ -4,6 +4,15 @@
         <title>OpenBar</title>
         <link>https://github.com/4nkitd/openbar</link>
         <item>
+            <title>0.1.13</title>
+            <pubDate>Sat, 17 Oct 2026 23:24:17 +0530</pubDate>
+            <sparkle:version>13</sparkle:version>
+            <sparkle:shortVersionString>0.1.13</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/4nkitd/openbar/releases/download/v0.1.13/OpenBar-0.1.13-macos-arm64.zip" length="3475094" type="application/octet-stream" sparkle:edSignature="uo3u2M6yqkCHi/ZqagO7wKz/7OU2Npor3scIe+GBwIoOIEPHKh1s1dgl5zDlrgB9FxNc8dfhALHTmUVxnZyBCw=="/>
+        </item>
+        <item>
             <title>0.1.12</title>
             <pubDate>Sat, 17 Oct 2026 22:23:38 +0530</pubDate>
             <sparkle:version>12</sparkle:version>
@@ -20,15 +29,6 @@
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure url="https://github.com/4nkitd/openbar/releases/download/v0.1.11/OpenBar-0.1.11-macos-arm64.zip" length="3401129" type="application/octet-stream" sparkle:edSignature="BK0y2ytt7SbkdY8cLT4+/Ptu0I/wcosPfT2cg84u3CUPUsNDKYQr2flmX3DnwgxKSdPs07rjarnoZ5V1jr/sBg=="/>
-        </item>
-        <item>
-            <title>0.1.10</title>
-            <pubDate>Sun, 11 Oct 2026 08:33:27 +0530</pubDate>
-            <sparkle:version>10</sparkle:version>
-            <sparkle:shortVersionString>0.1.10</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/4nkitd/openbar/releases/download/v0.1.10/OpenBar-0.1.10-macos-arm64.zip" length="3396902" type="application/octet-stream" sparkle:edSignature="nvs5Is2nsKPR+keeiT5tzt6MpihhyarTl4Cqs2Vi+C1FOwu8vm+2FJU6l/rDWcGlTsU1D7OlfNvmCtEc0XMgDw=="/>
         </item>
     </channel>
 </rss>
