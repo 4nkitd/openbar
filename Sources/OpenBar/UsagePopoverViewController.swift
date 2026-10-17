@@ -3,6 +3,7 @@ import AppKit
 final class UsagePopoverViewController: NSViewController {
     var onRefresh: (() -> Void)?
     var onOpenSettings: (() -> Void)?
+    var onOpenUsage: (() -> Void)?
     var onUseResetCredit: ((String) -> Void)?
     private let width: CGFloat = 376
     private let scroll = NSScrollView()
@@ -58,7 +59,11 @@ final class UsagePopoverViewController: NSViewController {
         settings.isBordered = false
         settings.font = .systemFont(ofSize: 11, weight: .medium)
         settings.setAccessibilityLabel("Manage integrations in Settings")
-        let footer = NSStackView(views: [footerLabel, flexibleSpacer(), settings])
+        let usage = NSButton(title: "Usage…", target: self, action: #selector(usageClicked))
+        usage.isBordered = false
+        usage.font = .systemFont(ofSize: 11, weight: .medium)
+        usage.setAccessibilityLabel("Open token history and estimated API cost")
+        let footer = NSStackView(views: [footerLabel, flexibleSpacer(), usage, settings])
         footer.orientation = .horizontal
         footer.alignment = .centerY
         footer.translatesAutoresizingMaskIntoConstraints = false
@@ -146,6 +151,7 @@ final class UsagePopoverViewController: NSViewController {
     func showResetCreditResult(_ result: Result<ConsumeResetCreditsResponse, Error>, accountID: String) { groups[.codex]?.resetResult(result, accountID: accountID) }
     @objc private func refreshClicked() { onRefresh?() }
     @objc private func settingsClicked() { onOpenSettings?() }
+    @objc private func usageClicked() { onOpenUsage?() }
 }
 
 private final class FlippedQuotaView: NSView {

@@ -185,7 +185,9 @@ enum CredentialStore {
 
     static func openCodeGoToken() -> String? {
         if let configured = configuredToken(for: .current(.openCodeGo)) { return configured }
-        if let key = openCodeV2Access(for: .openCodeGo, oauth: false, key: true) { return key }
+        if let credential = openCodeGoCredential() {
+            return openCodeV2Access(credential, oauth: false, key: true)
+        }
         let paths = [
             home(".local/share/opencode/auth.json"),
             home("Library/Application Support/opencode/auth.json")
@@ -196,6 +198,15 @@ enum CredentialStore {
                   let key = entry["key"] as? String,
                   !key.isEmpty else { continue }
             return key
+        }
+        return nil
+    }
+
+    static func openCodeGoCredential(databaseURLs: [URL] = openCodeDatabaseURLs()) -> [String: Any]? {
+        for provider in ["opencode-go", "opencode"] {
+            for url in databaseURLs {
+                if let value = openCodeV2Value(provider: provider, database: url, activeOnly: true) { return value }
+            }
         }
         return nil
     }
@@ -746,7 +757,7 @@ enum CredentialStore {
         return oidc ?? legacy
     }
 
-    static func openCodeV2Value(provider: String, database url: URL) -> [String: Any]? {
+    static func openCodeV2Value(provider: String, database url: URL, activeOnly: Bool = false) -> [String: Any]? {
         var db: OpaquePointer?
         let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
         guard sqlite3_open_v2(url.path, &db, flags, nil) == SQLITE_OK, let db else {
@@ -754,7 +765,7 @@ enum CredentialStore {
             return nil
         }
         defer { sqlite3_close(db) }
-        let sql = "SELECT value FROM credential WHERE integration_id = ? ORDER BY CASE WHEN active = 1 THEN 0 ELSE 1 END, time_updated DESC"
+        let sql = "SELECT value FROM credential WHERE integration_id = ?\(activeOnly ? " AND active = 1" : "") ORDER BY CASE WHEN active = 1 THEN 0 ELSE 1 END, time_updated DESC"
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return nil }
         defer { sqlite3_finalize(statement) }
@@ -973,6 +984,7 @@ private final class NoCredentialRedirects: NSObject, URLSessionTaskDelegate {
 }
 
 actor IntegrationService {
+    private var codexTokenTasks: [URL: Task<CodexAuth.Tokens, Error>] = [:]
     private static let xaiClientID = "b1a00492-073a-47ea-816f-4c329264a828"
     private let session: URLSession
     private let environment: [String: String]
@@ -1064,6 +1076,27 @@ actor IntegrationService {
         throw IntegrationError.invalidResponse("Codex usage API is unavailable.")
     }
 
+    func fetchCodexLifetime(account: IntegrationAccount) async throws -> Double {
+        guard account.integration == .codex, account.source != .file || account.credentialURL != nil else {
+            throw IntegrationError.notConfigured("Select a Codex credential source.")
+        }
+        var tokens = try await validCodexTokens(account: account)
+        for attempt in 0..<2 {
+            var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/profiles/me")!)
+            request.setValue("Bearer \(tokens.accessToken ?? "")", forHTTPHeaderField: "Authorization")
+            request.setValue("codex_cli_rs", forHTTPHeaderField: "originator")
+            if let id = tokens.accountID, !id.isEmpty { request.setValue(id, forHTTPHeaderField: "chatgpt-account-id") }
+            let (data, response) = try await session.data(for: request)
+            if (response as? HTTPURLResponse)?.statusCode == 401 && attempt == 0 {
+                tokens = try await validCodexTokens(account: account, forceRefresh: true)
+                continue
+            }
+            try validate(response, data: data, provider: "Codex profile")
+            return try UsageHistoryParsing.codexLifetime(data)
+        }
+        throw IntegrationError.notConfigured("Codex profile is unavailable.")
+    }
+
     private func validCodexTokens(account: IntegrationAccount, forceRefresh: Bool = false) async throws -> CodexAuth.Tokens {
         if account.source != .file,
            !FileManager.default.isReadableFile(atPath: CredentialStore.codexAuthURL().path),
@@ -1075,6 +1108,23 @@ actor IntegrationService {
     }
 
     private func validCodexTokens(authURL: URL, forceRefresh: Bool = false) async throws -> CodexAuth.Tokens {
+        let key = authURL.standardizedFileURL.resolvingSymlinksInPath()
+        if let task = codexTokenTasks[key] { return try await task.value }
+        let auth: CodexAuth
+        do { auth = try CredentialStore.readCodexAuth(at: key) }
+        catch { throw IntegrationError.notConfigured("Codex is not signed in.") }
+        guard let tokens = auth.tokens, let access = tokens.accessToken, !access.isEmpty else {
+            throw IntegrationError.notConfigured("Codex is not signed in.")
+        }
+        guard forceRefresh || (jwtExpiry(access)?.timeIntervalSinceNow ?? 3600) < 60,
+              let refresh = tokens.refreshToken, !refresh.isEmpty else { return tokens }
+        let task = Task { try await self.readOrRefreshCodexTokens(authURL: key, forceRefresh: true) }
+        codexTokenTasks[key] = task
+        defer { codexTokenTasks[key] = nil }
+        return try await task.value
+    }
+
+    private func readOrRefreshCodexTokens(authURL: URL, forceRefresh: Bool) async throws -> CodexAuth.Tokens {
         var auth: CodexAuth
         do {
             auth = try CredentialStore.readCodexAuth(at: authURL)
@@ -1238,6 +1288,7 @@ actor IntegrationService {
             throw IntegrationError.notConfigured("OpenCode Go API key is not configured.")
         }
         let urls = [
+            URL(string: "https://opencode.ai/inference/go/v1/usage")!,
             URL(string: "https://opencode.ai/zen/go/v1/usage")!,
             URL(string: "https://opencode.ai/api/v1/usage/plan")!
         ]

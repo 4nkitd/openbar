@@ -8,7 +8,7 @@ FILES=()
 for file in "$ROOT"/Sources/OpenBar/*.swift; do
     [[ "$file" == */App.swift ]] || FILES+=("$file")
 done
-swiftc -parse-as-library -warnings-as-errors -lsqlite3 "${FILES[@]}" "$ROOT/Tests/RegressionChecks.swift" -o "$OUT/Checks.app/Contents/MacOS/Checks"
+swiftc -parse-as-library -warnings-as-errors -lsqlite3 "${FILES[@]}" "$ROOT/Tests/RegressionChecks.swift" "$ROOT/Tests/UsageHistoryChecks.swift" -o "$OUT/Checks.app/Contents/MacOS/Checks"
 cp "$ROOT/assets/providers/claude.svg" "$OUT/Checks.app/Contents/Resources/ProviderClaude.svg"
 cp "$ROOT/assets/providers/codex.pdf" "$OUT/Checks.app/Contents/Resources/ProviderCodex.pdf"
 cp "$ROOT/assets/providers/opencode.svg" "$OUT/Checks.app/Contents/Resources/ProviderOpenCode.svg"

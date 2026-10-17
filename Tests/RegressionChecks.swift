@@ -497,6 +497,24 @@ private struct RegressionChecks {
                 throw CheckFailure(description: "Explicit file account fell back to another login")
             } catch IntegrationError.notConfigured {}
         }
+        let goDB = output.appendingPathComponent("go-current.db")
+        let consoleDB = output.appendingPathComponent("console-current.db")
+        let inactiveGoDB = output.appendingPathComponent("go-inactive.db")
+        let inactiveConsoleDB = output.appendingPathComponent("console-inactive.db")
+        let consoleOAuthDB = output.appendingPathComponent("console-oauth.db")
+        try writeOpenCodeCredentialDB(to: goDB, integration: "opencode-go", value: #"{"type":"key","key":"dedicated-go"}"#)
+        try writeOpenCodeCredentialDB(to: consoleDB, integration: "opencode", value: #"{"type":"key","key":"active-console"}"#)
+        try writeOpenCodeCredentialDB(to: inactiveGoDB, integration: "opencode-go", value: #"{"type":"key","key":"expired-go"}"#, active: false)
+        try writeOpenCodeCredentialDB(to: inactiveConsoleDB, integration: "opencode", value: #"{"type":"key","key":"inactive-console"}"#, active: false)
+        try writeOpenCodeCredentialDB(to: consoleOAuthDB, integration: "opencode", value: #"{"type":"oauth","access":"console-session"}"#)
+        let migratedGo = CredentialStore.openCodeGoCredential(databaseURLs: [inactiveGoDB, consoleDB])
+        try check(migratedGo?["key"] as? String == "active-console", "Current login discovers active Console credentials instead of an inactive Go key")
+        let dedicatedGo = CredentialStore.openCodeGoCredential(databaseURLs: [consoleDB, goDB])
+        try check(dedicatedGo?["key"] as? String == "dedicated-go", "An active dedicated Go account remains authoritative")
+        try check(CredentialStore.openCodeGoCredential(databaseURLs: [inactiveGoDB, inactiveConsoleDB]) == nil, "Inactive credentials must never be selected as the current Go login")
+        let consoleOAuth = CredentialStore.openCodeGoCredential(databaseURLs: [consoleOAuthDB])
+        try check(consoleOAuth != nil && CredentialStore.openCodeV2Access(consoleOAuth!, oauth: false, key: true) == nil, "Console OAuth sessions are not Go API keys and must not trigger legacy fallback")
+        try check(CredentialStore.openCodeGoCredential(databaseURLs: [xaiDB]) == nil, "Other provider credentials must not be used for Go")
         let claudeCleanup = IntegrationAccount.current(.claude)
         try check(claudeCleanup.ownedKeychainKeys == [claudeCleanup.tokenKey, claudeCleanup.claudeCacheKey], "Claude cleanup must include its OAuth cache")
         let multiProbe = FetchProbe()
@@ -635,6 +653,7 @@ private struct RegressionChecks {
         monitor.stop()
         print("PASS OpenCode activity parsing, provider switches, stop/wake/restart; 21-event metadata failure burst uses 1 request")
 
+        let historyFixture = try await UsageHistoryChecks.run(output: output)
         let app = NSApplication.shared
         let appDelegate = CheckAppDelegate()
         app.delegate = appDelegate
@@ -721,6 +740,7 @@ private struct RegressionChecks {
         try snapshot(preferences.window!.contentView!, to: output.appendingPathComponent("settings-dark.png"))
         preferences.window?.orderOut(nil)
         print(String(format: "PASS native UI identity reuse + expansion/scroll + empty/error/light/dark; first render %.2fms, update p50 %.2fms, p95 %.2fms", firstRender, timings.sorted()[50], timings.sorted()[95]))
+        try UsageHistoryChecks.screenshots(historyFixture, output: output)
         window.orderOut(nil)
         withExtendedLifetime(appDelegate) {}
         print("ALL CHECKS PASSED")
@@ -736,7 +756,7 @@ private struct RegressionChecks {
 
     @MainActor private static func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
 
-    private static func writeOpenCodeCredentialDB(to url: URL, integration: String, value: String) throws {
+    private static func writeOpenCodeCredentialDB(to url: URL, integration: String, value: String, active: Bool = true) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
         process.arguments = [url.path]
@@ -748,7 +768,7 @@ private struct RegressionChecks {
         let escaped = value.replacingOccurrences(of: "'", with: "''")
         let sql = """
         CREATE TABLE credential (id TEXT, integration_id TEXT, label TEXT, value TEXT, connector_id TEXT, method_id TEXT, active INTEGER, time_created INTEGER, time_updated INTEGER);
-        INSERT INTO credential VALUES ('cred_test','\(integration)','xAI','\(escaped)',NULL,'device',1,1,2);
+        INSERT INTO credential VALUES ('cred_test','\(integration)','xAI','\(escaped)',NULL,'device',\(active ? 1 : 0),1,2);
         """
         try input.fileHandleForWriting.write(contentsOf: Data(sql.utf8))
         try input.fileHandleForWriting.close()

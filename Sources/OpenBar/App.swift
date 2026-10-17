@@ -19,6 +19,10 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSMe
     private let activity = OpenCodeActivityMonitor()
     private lazy var notifications = NotificationManager(settings: settings)
     private var settingsWindow: SettingsWindowController?
+    private var usageWindow: UsageHistoryWindowController?
+    private let usageHistory = UsageHistoryService()
+    private var usageSnapshot: UsageHistorySnapshot?
+    private var usageTask: Task<Void, Never>?
     private let popover = NSPopover()
     private let controller = UsagePopoverViewController()
     private var actionsMenu: NSMenu?
@@ -43,6 +47,7 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSMe
         popover.delegate = self
         controller.onRefresh = { [weak self] in self?.store.refresh() }
         controller.onOpenSettings = { [weak self] in self?.showSettings() }
+        controller.onOpenUsage = { [weak self] in self?.showUsage() }
         controller.onUseResetCredit = { [weak self] id in self?.useResetCredit(accountID: id) }
         store.onChange = { [weak self] in self?.render() }
         activity.onChange = { [weak self] in
@@ -183,7 +188,7 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSMe
     private func buildActionsMenu() {
         let menu = NSMenu()
         for (title, action, key) in [
-            ("Refresh", #selector(refresh), "r"), ("Settings…", #selector(showSettings), ","),
+            ("Refresh", #selector(refresh), "r"), ("Usage…", #selector(showUsage), "u"), ("Settings…", #selector(showSettings), ","),
             ("Sign In to Codex…", #selector(signIn), ""), ("Check for Updates…", #selector(checkForUpdates), ""),
             ("Quit OpenBar", #selector(quit), "q")
         ] {
@@ -203,6 +208,41 @@ final class OpenBarApp: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSMe
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         menuItem.action != #selector(checkForUpdates) || updater?.updater.canCheckForUpdates == true
+    }
+
+    @objc private func showUsage() {
+        popover.performClose(nil)
+        if usageWindow == nil { usageWindow = UsageHistoryWindowController { [weak self] in self?.refreshUsage() } }
+        usageWindow?.show()
+        if usageSnapshot == nil || Date().timeIntervalSince(usageSnapshot!.updatedAt) >= 60 { refreshUsage() }
+    }
+
+    private func refreshUsage() {
+        guard usageTask == nil else { return }
+        usageWindow?.usageView.update(usageSnapshot, loading: true)
+        let accounts = settings.enabledAccounts.filter { $0.integration == .codex }
+        usageTask = Task { [weak self, usageHistory, service] in
+            defer { self?.usageTask = nil }
+            do {
+                var snapshot = try await usageHistory.load()
+                self?.usageWindow?.usageView.update(snapshot, loading: true)
+                for account in accounts {
+                    do {
+                        let count = try await service.fetchCodexLifetime(account: account)
+                        snapshot.accountTotals.append(UsageAccountTotal(label: "Codex · \(account.label)", tokens: count, status: "Lifetime tokens reported by the Codex profile API."))
+                    } catch {
+                        snapshot.accountTotals.append(UsageAccountTotal(label: "Codex · \(account.label)", tokens: nil, status: "Profile API unavailable for this sign-in. Local records are still included."))
+                    }
+                }
+                snapshot.updatedAt = Date()
+                self?.usageSnapshot = snapshot
+                self?.usageWindow?.usageView.update(snapshot, loading: false)
+            } catch {
+                var snapshot = self?.usageSnapshot ?? UsageHistorySnapshot()
+                snapshot.coverage.append("Usage refresh failed. Previously loaded figures, if any, are unchanged.")
+                self?.usageWindow?.usageView.update(snapshot, loading: false)
+            }
+        }
     }
 
     @objc private func showSettings() {

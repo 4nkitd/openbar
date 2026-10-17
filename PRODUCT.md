@@ -37,7 +37,7 @@ Usage comes from provider HTTP APIs, never browser scraping or provider CLI exec
 - Google OAuth client secrets are not bundled. Antigravity can use an existing access token; token refresh requires matching OAuth client credentials saved locally in Keychain or supplied at runtime.
 - No telemetry or analytics. Stores preferences, timestamped quota caches and explicitly saved credentials in Keychain.
 - Settings: tabbed General, Integrations, Notifications, and About panes; provider toggles, secure token fields, refresh every 1/5/15/30 minutes, Launch at Login, percentage used vs. remaining, automatic update checks, and notification controls.
-- Deliberately excludes dashboards, browser extensions, graphs, and themes — scope stays "menu bar quotas, nothing more."
+- Includes a separate native Usage window for local Codex/Claude counters, OpenCode statistics and estimated API cost. Provider-reported lifetime totals stay separate. No browser extensions, graphs or themes.
 - Independent project: not affiliated with, endorsed by, or sponsored by any supported provider.
 
 ## Brand Commitments

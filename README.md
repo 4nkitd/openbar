@@ -17,7 +17,7 @@ brew install --cask 4nkitd/tap/openbar
 open -a OpenBar
 ```
 
-Or download [OpenBar v0.1.12](https://github.com/4nkitd/openbar/releases/download/v0.1.12/OpenBar-0.1.12-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
+Or download [OpenBar v0.1.13](https://github.com/4nkitd/openbar/releases/download/v0.1.13/OpenBar-0.1.13-macos-arm64.zip), unzip it, and move **OpenBar.app** into **Applications**.
 
 This release is ad-hoc signed and is not notarized. If Gatekeeper blocks the app, review the download source and allow it under **System Settings → Privacy & Security → Open Anyway**. Homebrew updates are available through `brew upgrade --cask 4nkitd/tap/openbar`.
 
@@ -40,6 +40,16 @@ Quit Headroom and disable its launch-at-login setting before switching. If you u
 
 ## Add accounts
 
+### Recorded tokens and estimated cost
+
+Open **Usage…** from the popover to see recorded tokens by model and estimated API cost in USD. The window combines local Codex and Claude history with the running OpenCode service's statistics. Codex provider-reported lifetime totals appear separately because they can overlap local history.
+
+Costs are estimates, not subscription charges or invoices. Unknown prices remain unpriced. Expand **Sources & account totals** for coverage and pricing limitations. Deleted history, compressed files and usage on other Macs may be missing. Refresh reads counters without storing prompts or responses.
+
+![Recorded usage](assets/screenshots/usage-history-dark.png)
+
+### Configure an account
+
 Open **Integrations…** from the popover and choose a provider.
 
 | Provider | Account setup | Usage source |
@@ -57,6 +67,8 @@ OpenBar does not implement new OAuth sign-in flows. Extra OAuth accounts must al
 
 On launch, OpenBar adds a Current login account for each compatible OpenCode V2 credential in `opencode.db` that is not already configured: ChatGPT/Codex (`openai`), Claude (`anthropic`), OpenCode Go, GitHub Copilot, and xAI Grok. Gemini API keys, Exa, Firecrawl and other OpenCode connectors are ignored. Existing accounts and off toggles are left alone.
 
+For an existing Go Current login account, OpenBar prefers an active dedicated `opencode-go` credential, then an active `opencode` Console credential. Inactive accounts and Console OAuth sessions are not used as Go API keys. An explicitly configured Go key still takes precedence.
+
 GitHub's unofficial quota endpoint does not accept every personal access token. The account is marked **Verified** only after a successful quota response. Saving a token alone is not proof of access.
 
 ### Antigravity OAuth setup
@@ -73,7 +85,7 @@ For one-time local setup from an already configured environment, launch `dist/Op
 
 ## Privacy and storage
 
-All quota collection uses in-process HTTP requests to the issuing provider. There is no browser scraping, browser-cookie access, local usage estimation, telemetry or OpenBar backend. Claude polling calls the read-only OAuth usage endpoint; it does not submit model inference requests.
+Quota collection uses in-process HTTP requests to the issuing provider. The Usage window also reads local token counters and OpenCode's local statistics API, and estimates their API cost. There is no browser scraping, browser-cookie access, telemetry or OpenBar backend. Claude polling calls the read-only OAuth usage endpoint; it does not submit model inference requests.
 
 - Account names, file paths, enable switches and preferences use the `in.4nkitd.openbar` UserDefaults domain.
 - Account API tokens and refreshed Claude credential caches use Keychain. The internal service name `dev.vaibhav.codexbar.integrations` is deliberately retained for compatibility with the earlier development build.
